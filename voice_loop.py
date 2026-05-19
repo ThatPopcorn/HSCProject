@@ -60,7 +60,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-import pyaudio
+import pyaudio # sudo apt-get install portaudio19-dev, then use pip install pyaudio
 import vosk
 from pynput import keyboard
 
