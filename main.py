@@ -85,8 +85,6 @@ PIXEL_ON     = "██"
 PIXEL_OFF    = "  "
 CLEAR_SCREEN = "\033[2J\033[H"
 
-DEBUG = False
-
 if sys.platform == "win32":
     os.system("")  # enable ANSI escapes
 
@@ -224,17 +222,6 @@ def render(pet: Pet) -> None:
                 parts.append(f"  {line}")
 
     parts.append("")
-
-    if DEBUG and pet.last_raw_response:
-        parts.append("  ─── debug ────────────────────────────────")
-        raw = pet.last_raw_response.replace("\n", "\\n")
-        if len(raw) > 240:
-            raw = raw[:240] + "…"
-        for i, line in enumerate(textwrap.wrap(raw, width=58)):
-            prefix = "  raw: " if i == 0 else "       "
-            parts.append(prefix + line)
-        parts.append("  ──────────────────────────────────────────")
-        parts.append("")
 
     print("\n".join(parts), flush=True)
 
@@ -488,12 +475,8 @@ def main():
     parser = argparse.ArgumentParser(description="AI-controlled terminal Tamagotchi")
     parser.add_argument("--mock",  action="store_true",
                         help="canned responses, no model load")
-    parser.add_argument("--debug", action="store_true",
-                        help="show raw model output")
     args = parser.parse_args()
 
-    global DEBUG
-    DEBUG = args.debug
 
     pet = Pet()
     render(pet)
@@ -546,16 +529,12 @@ def main():
 
             if user_input.startswith("/"):
                 cmd = user_input.lower()
-                if cmd == "/debug":
-                    DEBUG = not DEBUG
-                    print(f"  debug: {'on' if DEBUG else 'off'}")
-                elif cmd == "/clear":
+                if cmd == "/clear":
                     # clear the chatbots memory but keep the system prompt
                     history = [history[0]]
                     print("  memory cleared.")           
                 elif cmd == "/help":
                     print("  SPACE   voice input (press again to stop)")
-                    print("  /debug  toggle raw output")
                     print("  /quit   exit")
                 elif cmd in ("/quit", "/exit"):
                     break

@@ -62,7 +62,12 @@ from typing import Callable, Optional
 
 import pyaudio # sudo apt-get install portaudio19-dev, then use pip install pyaudio
 import vosk
-from pynput import keyboard
+try:
+    from pynput import keyboard as _pynput_keyboard
+    _PYNPUT_OK = True
+except Exception:
+    _pynput_keyboard = None
+    _PYNPUT_OK = False
 
 
 # ─── config ───────────────────────────────────────────────────────────
@@ -70,7 +75,7 @@ from pynput import keyboard
 SCRIPT_DIR  = Path(__file__).resolve().parent
 VOSK_MODEL  = SCRIPT_DIR / "vosk-model-small-en-us-0.15"
 SAMPLE_RATE = 16000
-BUTTON_KEY  = keyboard.Key.space
+BUTTON_KEY  = _pynput_keyboard.Key.space if _PYNPUT_OK else None
 
 
 # ─── TTS ──────────────────────────────────────────────────────────────
@@ -228,6 +233,9 @@ class Button:
     Pi this whole class gets replaced with a GPIO interrupt callback
     that calls self._event.set() — nothing else has to change.
 
+    Uses pynput when a display is available; falls back to reading stdin
+    directly in headless / no-X environments.
+
     Usage:
         with Button() as b:
             b.wait()                         # block until pressed
@@ -239,11 +247,11 @@ class Button:
     def __init__(self, key=BUTTON_KEY):
         self._key = key
         self._event = threading.Event()
-        self._listener: Optional[keyboard.Listener] = None
+        self._listener = None
 
     def start(self) -> "Button":
-        if self._listener is None:
-            self._listener = keyboard.Listener(on_press=self._on_key)
+        if _PYNPUT_OK and self._listener is None:
+            self._listener = _pynput_keyboard.Listener(on_press=self._on_key)
             self._listener.start()
         return self
 
@@ -264,10 +272,55 @@ class Button:
 
     def wait(self, timeout: Optional[float] = None) -> bool:
         """Block until pressed (or timeout). Returns True if pressed."""
-        pressed = self._event.wait(timeout=timeout)
-        if pressed:
-            self._event.clear()
-        return pressed
+        if _PYNPUT_OK:
+            pressed = self._event.wait(timeout=timeout)
+            if pressed:
+                self._event.clear()
+            return pressed
+        return self._stdin_wait(timeout)
+
+    def _stdin_wait(self, timeout: Optional[float] = None) -> bool:
+        """Headless fallback: read stdin in raw mode, return True on SPACE."""
+        deadline = time.time() + timeout if timeout is not None else None
+        if sys.platform == "win32":
+            import msvcrt
+            while True:
+                if deadline is not None and time.time() >= deadline:
+                    return False
+                if self._event.is_set():
+                    self._event.clear()
+                    return True
+                if msvcrt.kbhit():
+                    ch = msvcrt.getwch()
+                    if ch == " ":
+                        return True
+                    if ch == "\x03":
+                        raise KeyboardInterrupt
+                time.sleep(0.02)
+        else:
+            import select, termios, tty
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                while True:
+                    if deadline is not None and time.time() >= deadline:
+                        return False
+                    if self._event.is_set():
+                        self._event.clear()
+                        return True
+                    poll_s = max(0.0, deadline - time.time()) if deadline else 0.05
+                    if select.select([sys.stdin], [], [], min(poll_s, 0.05))[0]:
+                        ch = sys.stdin.read(1)
+                        if ch == " ":
+                            return True
+                        if ch == "\x03":
+                            raise KeyboardInterrupt
+                        if ch == "\x1b":
+                            while select.select([sys.stdin], [], [], 0)[0]:
+                                sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
     def is_set(self) -> bool:
         return self._event.is_set()
