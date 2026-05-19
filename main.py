@@ -23,10 +23,41 @@ Env
 """
 
 import argparse
-import msvcrt
+import sys
+
+if sys.platform == "win32":
+    import msvcrt as _msvcrt
+    _kbhit  = _msvcrt.kbhit
+    _getwch = _msvcrt.getwch
+    _NL     = "\n"
+
+    class _raw_term:
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+else:
+    import select
+    import termios
+    import tty
+
+    def _kbhit() -> bool:
+        return bool(select.select([sys.stdin], [], [], 0)[0])
+
+    def _getwch() -> str:
+        return sys.stdin.read(1)
+
+    _NL = "\r\n"
+
+    class _raw_term:
+        def __enter__(self):
+            self._fd  = sys.stdin.fileno()
+            self._old = termios.tcgetattr(self._fd)
+            tty.setraw(self._fd)
+            return self
+        def __exit__(self, *_):
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+
 import os
 import random
-import sys
 import textwrap
 import threading
 import time
@@ -270,15 +301,16 @@ def speak(pet: Pet, text: str, tts: TTS, button: Button) -> None:
     t = threading.Thread(target=tts.speak, args=(text,), daemon=True)
     t.start()
 
-    while t.is_alive():
-        if button.is_set() or msvcrt.kbhit():
-            button.clear()
-            if msvcrt.kbhit():
-                msvcrt.getwch()
-            tts.stop()
-            t.join()
-            break
-        time.sleep(0.03)
+    with _raw_term():
+        while t.is_alive():
+            if button.is_set() or _kbhit():
+                button.clear()
+                if _kbhit():
+                    _getwch()
+                tts.stop()
+                t.join()
+                break
+            time.sleep(0.03)
 
     pet.face = "neutral"
     # pet.speech kept intentionally — get_input_line clears it on first keypress
@@ -298,49 +330,56 @@ def get_input_line(pet: Pet, button: Button) -> str:
     render(pet)
 
     line: List[str] = []
-    sys.stdout.write("\n  you > ")
-    sys.stdout.flush()
 
-    while True:
-        if not msvcrt.kbhit():
-            time.sleep(0.01)
-            continue
+    with _raw_term():
+        sys.stdout.write(_NL + "  you > ")
+        sys.stdout.flush()
 
-        raw = msvcrt.getwch()
+        while True:
+            if not _kbhit():
+                time.sleep(0.01)
+                continue
 
-        # Clear last response on first interaction so it doesn't linger
-        if pet.speech:
-            pet.speech = ""
+            raw = _getwch()
 
-        if raw in ("\x00", "\xe0"):   # extended key — discard second byte
-            msvcrt.getwch()
-            continue
+            # Clear last response on first interaction so it doesn't linger
+            if pet.speech:
+                pet.speech = ""
 
-        if raw == "\x03":             # Ctrl+C
-            raise KeyboardInterrupt
+            if raw in ("\x00", "\xe0"):   # Windows extended key — discard second byte
+                _getwch()
+                continue
 
-        if raw in ("\r", "\n"):       # Enter
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            return "".join(line)
+            if raw == "\x1b":             # Linux escape sequence (arrow keys etc.)
+                while _kbhit():
+                    _getwch()
+                continue
 
-        if raw == "\x08":             # Backspace
-            if line:
-                line.pop()
-                sys.stdout.write("\b \b")
+            if raw == "\x03":             # Ctrl+C
+                raise KeyboardInterrupt
+
+            if raw in ("\r", "\n"):       # Enter
+                sys.stdout.write(_NL)
                 sys.stdout.flush()
-            continue
+                return "".join(line)
 
-        if raw == " " and not line:   # SPACE on empty line → voice
-            button.clear()            # pynput also fired; clear it now
-            sys.stdout.write("[voice]\n")
-            sys.stdout.flush()
-            return _VOICE
+            if raw in ("\x08", "\x7f"):   # Backspace (\x7f on Linux)
+                if line:
+                    line.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
 
-        if ord(raw) >= 32:            # printable
-            line.append(raw)
-            sys.stdout.write(raw)
-            sys.stdout.flush()
+            if raw == " " and not line:   # SPACE on empty line → voice
+                button.clear()            # pynput also fired; clear it now
+                sys.stdout.write("[voice]" + _NL)
+                sys.stdout.flush()
+                return _VOICE
+
+            if ord(raw) >= 32:            # printable
+                line.append(raw)
+                sys.stdout.write(raw)
+                sys.stdout.flush()
 
 
 # ──────────────────────────────────────────────────────────────────────────

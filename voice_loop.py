@@ -26,7 +26,7 @@ Helpers:
 
 Setup
 -----
-    pip install vosk sounddevice pynput pyttsx3
+    pip install vosk pyaudio pynput pyttsx3
 
     Vosk model (~40 MB) — download a small model from
     https://alphacephei.com/vosk/models and unzip next to this file as
@@ -60,7 +60,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-import sounddevice as sd
+import pyaudio
 import vosk
 from pynput import keyboard
 
@@ -170,8 +170,9 @@ class STT:
         self._audio_q: queue.Queue = queue.Queue()
         self._stop_event = threading.Event()
 
-    def _audio_cb(self, indata, frames, time_info, status):
-        self._audio_q.put(bytes(indata))
+    def _audio_cb(self, in_data, frame_count, time_info, status):
+        self._audio_q.put(in_data)
+        return (None, pyaudio.paContinue)
 
     def listen(self, on_partial: Optional[Callable[[str], None]] = None) -> str:
         self._stop_event.clear()
@@ -182,10 +183,17 @@ class STT:
         rec = vosk.KaldiRecognizer(self.model, self.sample_rate)
         chunks: list = []
 
-        with sd.RawInputStream(
-            samplerate=self.sample_rate, blocksize=4000,
-            dtype="int16", channels=1, callback=self._audio_cb,
-        ):
+        pa = pyaudio.PyAudio()
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=self.sample_rate,
+            input=True,
+            frames_per_buffer=4000,
+            stream_callback=self._audio_cb,
+        )
+        stream.start_stream()
+        try:
             while not self._stop_event.is_set():
                 try:
                     data = self._audio_q.get(timeout=0.1)
@@ -198,6 +206,10 @@ class STT:
                 elif on_partial is not None:
                     partial = json.loads(rec.PartialResult()).get("partial", "")
                     on_partial(partial)
+        finally:
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
 
         tail = json.loads(rec.FinalResult()).get("text", "")
         if tail:
