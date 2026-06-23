@@ -127,17 +127,21 @@ header{
   background:var(--bg);border:1px solid var(--b0);
   color:var(--text);font-family:inherit;font-size:10px;
   padding:6px 8px;outline:none;width:100%;
-  -webkit-appearance:none;cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+  cursor:pointer;
 }
 .slider-row{display:flex;align-items:center;gap:8px}
 .sl-l{font-size:8.5px;color:var(--dim);width:40px;letter-spacing:.08em;text-transform:uppercase}
 .sl-v{font-size:9px;color:var(--teal);width:28px;text-align:right;flex-shrink:0}
 input[type=range]{
   flex:1;height:1px;-webkit-appearance:none;
+  appearance:none;
   background:var(--b1);outline:none;cursor:pointer;
 }
 input[type=range]::-webkit-slider-thumb{
   -webkit-appearance:none;width:9px;height:9px;
+  appearance:none;
   background:var(--teal);cursor:pointer;
 }
 
