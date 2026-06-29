@@ -9,32 +9,31 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:       #07090f;
-  --bg1:      #0c0e1b;
-  --bg2:      #0f1120;
-  --b0:       #131628;
-  --b1:       #1c2038;
-  --text:     #6b7899;
-  --texthi:   #c4cce4;
-  --dim:      #2a3050;
-  --teal:     #29d4be;
-  --tealg:    rgba(41,212,190,.12);
-  --blue:     #5ba3f5;
-  --red:      #f06c6c;
-  --redg:     rgba(240,108,108,.10);
-  --green:    #4ade80;
-  --amber:    #f8c840;
-  --off:      #0b0d1c;
-  --on:       #dde4ff;
+  --bg:       #EBF1F5;
+  --bg1:      #FFFFFF;
+  --bg2:      #F4F8FC;
+  --b0:       rgba(147,165,207,0.22);
+  --b1:       rgba(147,165,207,0.38);
+  --text:     #6B7FA0;
+  --texthi:   #2C3A58;
+  --dim:      #A8B9D3;
+  --teal:     #93A5CF;
+  --tealg:    rgba(147,165,207,0.13);
+  --blue:     #7BA5D8;
+  --red:      #D97070;
+  --redg:     rgba(217,112,112,0.10);
+  --green:    #5BBB88;
+  --amber:    #C8973A;
+  --off:      #D6E4EE;
+  --on:       #93A5CF;
   --cs:       20px;
   --cg:       2px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
 body{
-  background:var(--bg);
-  background-image:radial-gradient(circle,#12152a 1px,transparent 1px);
-  background-size:20px 20px;
+  background: linear-gradient(145deg, #E4EFE9 0%, #ECF0F8 45%, #EBF0F9 100%);
+  background-attachment:fixed;
   color:var(--text);
   font-family:'IBM Plex Mono',monospace;
   font-size:11px;
@@ -45,8 +44,11 @@ body{
 /* ── HEADER ───────────────────────────────────── */
 header{
   height:40px;
-  background:var(--bg1);
+  background:rgba(255,255,255,0.82);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
   border-bottom:1px solid var(--b0);
+  box-shadow:0 1px 8px rgba(147,165,207,0.10);
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -66,10 +68,10 @@ header{
 .logo-dot{
   width:6px;height:6px;border-radius:50%;
   background:var(--teal);
-  box-shadow:0 0 8px var(--teal);
+  box-shadow:0 0 8px rgba(147,165,207,0.7);
   animation:glow 2.6s ease-in-out infinite;
 }
-@keyframes glow{0%,100%{opacity:1;box-shadow:0 0 8px var(--teal)}50%{opacity:.4;box-shadow:0 0 3px var(--teal)}}
+@keyframes glow{0%,100%{opacity:1;box-shadow:0 0 8px rgba(147,165,207,0.7)}50%{opacity:.4;box-shadow:0 0 3px rgba(147,165,207,0.4)}}
 
 .hright{display:flex;align-items:center;gap:10px}
 .conn-chip{
@@ -82,9 +84,9 @@ header{
   background:var(--dim);
   transition:background .3s,box-shadow .3s;
 }
-.conn-pip.ok  {background:var(--green);box-shadow:0 0 5px var(--green)}
-.conn-pip.err {background:var(--red);  box-shadow:0 0 5px var(--red)}
-.conn-pip.act {background:var(--teal); box-shadow:0 0 5px var(--teal)}
+.conn-pip.ok  {background:var(--green);box-shadow:0 0 5px rgba(91,187,136,0.6)}
+.conn-pip.err {background:var(--red);  box-shadow:0 0 5px rgba(217,112,112,0.6)}
+.conn-pip.act {background:var(--teal); box-shadow:0 0 5px rgba(147,165,207,0.7)}
 
 .btn-cog{
   background:none;border:none;color:var(--dim);
@@ -97,9 +99,13 @@ header{
 .settings{
   position:fixed;top:40px;right:0;
   width:240px;
-  background:var(--bg1);
+  background:rgba(255,255,255,0.96);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
   border-left:1px solid var(--b0);
   border-bottom:1px solid var(--b0);
+  border-bottom-left-radius:10px;
+  box-shadow:-4px 4px 20px rgba(147,165,207,0.15);
   padding:16px 14px;
   z-index:40;
   display:none;
@@ -118,13 +124,15 @@ header{
 .sp-lbl{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .sp-field{
   background:var(--bg);border:1px solid var(--b0);
+  border-radius:5px;
   color:var(--texthi);font-family:inherit;font-size:10px;
   padding:6px 8px;outline:none;width:100%;
-  transition:border-color .15s;
+  transition:border-color .15s,box-shadow .15s;
 }
-.sp-field:focus{border-color:var(--teal)}
+.sp-field:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(147,165,207,0.15)}
 .sp-select{
   background:var(--bg);border:1px solid var(--b0);
+  border-radius:5px;
   color:var(--text);font-family:inherit;font-size:10px;
   padding:6px 8px;outline:none;width:100%;
   -webkit-appearance:none;
@@ -135,35 +143,39 @@ header{
 .sl-l{font-size:8.5px;color:var(--dim);width:40px;letter-spacing:.08em;text-transform:uppercase}
 .sl-v{font-size:9px;color:var(--teal);width:28px;text-align:right;flex-shrink:0}
 input[type=range]{
-  flex:1;height:1px;-webkit-appearance:none;
+  flex:1;height:2px;-webkit-appearance:none;
   appearance:none;
-  background:var(--b1);outline:none;cursor:pointer;
+  background:var(--b1);border-radius:2px;outline:none;cursor:pointer;
 }
 input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:9px;height:9px;
+  -webkit-appearance:none;width:10px;height:10px;border-radius:50%;
   appearance:none;
   background:var(--teal);cursor:pointer;
+  box-shadow:0 0 0 2px rgba(255,255,255,0.9),0 0 0 3px rgba(147,165,207,0.4);
 }
 
 .sp-btn{
   padding:7px 10px;background:none;border:1px solid var(--b1);
+  border-radius:5px;
   color:var(--text);font-family:inherit;font-size:9px;
   letter-spacing:.12em;text-transform:uppercase;cursor:pointer;
   transition:all .15s;text-align:center;
 }
-.sp-btn:hover{border-color:var(--teal);color:var(--teal)}
+.sp-btn:hover{border-color:var(--teal);color:var(--teal);background:var(--tealg)}
 .sp-btn.active{background:var(--tealg);border-color:var(--teal);color:var(--teal)}
 .sp-btn.danger{border-color:var(--red);color:var(--red)}
+.sp-btn.danger:hover{background:rgba(217,112,112,0.08)}
 
 /* expression grid */
 .expr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 .expr-btn{
   padding:5px 2px;background:none;border:1px solid var(--b0);
+  border-radius:4px;
   color:var(--dim);font-family:inherit;font-size:8px;
   letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
   transition:all .1s;text-align:center;
 }
-.expr-btn:hover{border-color:var(--b1);color:var(--text)}
+.expr-btn:hover{border-color:var(--b1);color:var(--text);background:rgba(147,165,207,0.06)}
 .expr-btn.active{background:var(--tealg);border-color:var(--teal);color:var(--teal)}
 
 /* ── MAIN CONTENT ─────────────────────────────── */
@@ -189,14 +201,14 @@ main{
   content:'';position:absolute;
   width:12px;height:12px;
   border-color:var(--teal);border-style:solid;
-  opacity:.45;transition:opacity .3s;
+  opacity:.55;transition:opacity .3s;
 }
 .face-frame::before{top:0;left:0;border-width:2px 0 0 2px}
 .face-frame::after {top:0;right:0;border-width:2px 2px 0 0}
 .face-frame .ca-bl {bottom:0;left:0;border-width:0 0 2px 2px}
 .face-frame .ca-br {bottom:0;right:0;border-width:0 2px 2px 0}
 .face-frame.lit::before,.face-frame.lit::after,
-.face-frame.lit .ca-bl,.face-frame.lit .ca-br{opacity:.9}
+.face-frame.lit .ca-bl,.face-frame.lit .ca-br{opacity:1}
 
 .face-grid{
   display:grid;
@@ -205,36 +217,39 @@ main{
   gap:var(--cg);
   background:var(--bg1);
   border:1px solid var(--b0);
+  box-shadow:0 4px 24px rgba(147,165,207,0.16),0 1px 4px rgba(147,165,207,0.10);
   padding:8px;
   position:relative;
 }
 .face-grid::after{
   content:'';position:absolute;inset:0;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.07) 2px,rgba(0,0,0,.07) 4px);
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(147,165,207,.03) 2px,rgba(147,165,207,.03) 4px);
   pointer-events:none;z-index:1;
 }
 .cell{
   width:var(--cs);height:var(--cs);
   background:var(--off);
-  border:1px solid #0e1025;
+  border:1px solid rgba(147,165,207,0.12);
   transition:background .05s,box-shadow .05s;
 }
 .cell.on{
   background:var(--on);
-  border-color:rgba(180,200,255,.2);
-  box-shadow:0 0 5px rgba(200,220,255,.3);
+  border-color:rgba(147,165,207,0.5);
+  box-shadow:0 0 5px rgba(147,165,207,0.35);
 }
 
 /* ── INPUT BAR ────────────────────────────────── */
 .input-bar{
   display:flex;align-items:center;
-  background:var(--bg1);
+  background:rgba(255,255,255,0.9);
   border:1px solid var(--b0);
+  border-radius:8px;
+  box-shadow:0 2px 12px rgba(147,165,207,0.13);
   width:340px;
-  transition:border-color .15s;
+  transition:border-color .15s,box-shadow .15s;
 }
-.input-bar:focus-within{border-color:var(--b1)}
-.input-bar.recording{border-color:var(--red)}
+.input-bar:focus-within{border-color:var(--teal);box-shadow:0 2px 16px rgba(147,165,207,0.25)}
+.input-bar.recording{border-color:var(--red);box-shadow:0 2px 12px rgba(217,112,112,0.15)}
 
 .ib-mic,.ib-send{
   flex-shrink:0;
@@ -265,21 +280,24 @@ main{
   font-size:9px;color:var(--dim);letter-spacing:.06em;
 }
 .cs-dot{width:4px;height:4px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .3s}
-.cs-dot.ok  {background:var(--green);box-shadow:0 0 4px var(--green)}
-.cs-dot.err {background:var(--red);  box-shadow:0 0 4px var(--red)}
+.cs-dot.ok  {background:var(--green);box-shadow:0 0 4px rgba(91,187,136,0.6)}
+.cs-dot.err {background:var(--red);  box-shadow:0 0 4px rgba(217,112,112,0.6)}
 
 /* ── SPEECH BAR ───────────────────────────────── */
 .speech-bar{
-  height:44px;background:var(--bg2);
+  height:44px;
+  background:rgba(255,255,255,0.88);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
   border-top:1px solid var(--b0);
   display:flex;align-items:center;gap:12px;
   padding:0 16px;flex-shrink:0;overflow:hidden;
   transition:height .2s,opacity .2s;position:relative;z-index:5;
 }
-.speech-bar.hidden{height:0;opacity:0;border-top-width:0;pointer-events:none}
+.speech-bar.hidden{height:0;min-height:0;opacity:0;border-top-width:0;pointer-events:none;padding:0;margin:0}
 .sp-badge{
   font-size:8.5px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;
-  padding:3px 7px;border:1px solid;white-space:nowrap;flex-shrink:0;
+  padding:3px 7px;border:1px solid;border-radius:3px;white-space:nowrap;flex-shrink:0;
 }
 .sp-badge.listening{color:var(--red);border-color:var(--red);animation:badge-b .9s ease-in-out infinite}
 .sp-badge.speaking {color:var(--blue);border-color:var(--blue)}
@@ -291,43 +309,11 @@ main{
 }
 .sp-text::after{
   content:'';position:absolute;top:0;right:0;bottom:0;width:50px;
-  background:linear-gradient(to right,transparent,var(--bg2));pointer-events:none;
+  background:linear-gradient(to right,transparent,rgba(255,255,255,0.88));pointer-events:none;
 }
 .word{display:inline}
 .word.spoken {color:var(--dim)}
-.word.current{color:var(--teal);text-shadow:0 0 8px rgba(41,212,190,.5)}
-
-/* ── DEBUG CONSOLE ────────────────────────────── */
-.debug{
-  height:132px;background:var(--bg);
-  border-top:1px solid var(--b0);
-  flex-shrink:0;position:relative;overflow:hidden;
-}
-.debug::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:52px;
-  background:linear-gradient(to bottom,var(--bg),transparent);
-  pointer-events:none;z-index:2;
-}
-.log-wrap{
-  height:100%;overflow-y:auto;overflow-x:hidden;
-  display:flex;flex-direction:column;justify-content:flex-end;
-  padding:6px 14px 6px;gap:1px;
-}
-.log-wrap::-webkit-scrollbar{display:none}
-.log-line{
-  display:flex;gap:9px;font-size:9.5px;white-space:nowrap;
-  overflow:hidden;flex-shrink:0;
-  animation:li .18s ease;
-}
-@keyframes li{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none}}
-.l-t  {color:var(--dim);flex-shrink:0}
-.l-lv {width:36px;flex-shrink:0;font-weight:500}
-.l-ms {color:var(--text);overflow:hidden;text-overflow:ellipsis}
-.log-line.info  .l-lv{color:var(--blue)}
-.log-line.warn  .l-lv{color:var(--amber)}
-.log-line.error .l-lv{color:var(--red)}
-.log-line.ok    .l-lv{color:var(--green)}
-.log-line.debug .l-lv{color:var(--dim)}
+.word.current{color:var(--teal);text-shadow:0 0 8px rgba(147,165,207,0.5)}
 </style>
 </head>
 <body>
@@ -347,7 +333,7 @@ main{
 
   <div class="sp-row">
     <div class="sp-lbl">WebSocket URL</div>
-    <input class="sp-field" id="wsUrl" value="ws://localhost:8000/ws" spellcheck="false">
+    <input class="sp-field" id="wsUrl" value="" spellcheck="false">
   </div>
   <button class="sp-btn" id="btnConn" onclick="toggleConnect()">Connect</button>
 
@@ -377,11 +363,11 @@ main{
     <div class="face-grid" id="faceGrid"></div>
   </div>
   <div class="input-bar" id="inputBar">
-    <button class="ib-mic" id="micBtn" onclick="toggleMic()" title="Toggle voice input">
+    <button type="button" class="ib-mic" id="micBtn" onclick="toggleMic()" title="Toggle voice input">
       <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 16.93A7 7 0 0 1 5 11H3a9 9 0 0 0 8 8.94V22h-2v2h6v-2h-2z"/></svg>
     </button>
     <input class="ib-text" id="txtInput" placeholder="Type a message or use mic…">
-    <button class="ib-send" onclick="sendText()" title="Send">
+    <button type="button" class="ib-send" onclick="sendText()" title="Send">
       <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
     </button>
   </div>
@@ -395,11 +381,6 @@ main{
 <div class="speech-bar hidden" id="speechBar">
   <div class="sp-badge" id="spBadge">LISTENING</div>
   <div class="sp-text" id="spText">…</div>
-</div>
-
-<!-- DEBUG CONSOLE -->
-<div class="debug">
-  <div class="log-wrap" id="logWrap"></div>
 </div>
 
 <script>
@@ -474,12 +455,11 @@ function startSpeakAnim() {
   let f = 0;
   const step = () => {
     if (curFace !== 'speaking') return;
-    // clear mouth area (rows 9-12, inner cols)
     for (let r=9;r<=12;r++) for (let c=2;c<=13;c++) cells[r*16+c].classList.remove('on');
-    if (f%2===0) { // open mouth
+    if (f%2===0) {
       [6,7,8].forEach(c=>{cells[9*16+c].classList.add('on');cells[12*16+c].classList.add('on')});
       [5,9].forEach(c=>{cells[10*16+c].classList.add('on');cells[11*16+c].classList.add('on')});
-    } else { // mid mouth
+    } else {
       [5,6,7,8,9].forEach(c=>{cells[10*16+c].classList.add('on');cells[11*16+c].classList.add('on')});
     }
     f++; speakT = setTimeout(step, 180);
@@ -501,22 +481,6 @@ EXPR_NAMES.forEach(n => {
   b.onclick = () => setFace(n);
   exprGrid.appendChild(b);
 });
-
-/* ─────────────────────────────────────────────────
-   LOG CONSOLE
-───────────────────────────────────────────────── */
-const logWrap = document.getElementById('logWrap');
-const LVL = {info:'INFO',warn:'WARN',error:' ERR',ok:'  OK',debug:'DEBG'};
-
-function log(msg, lv='info') {
-  const t = new Date().toTimeString().slice(0,8);
-  const el = document.createElement('div');
-  el.className = `log-line ${lv}`;
-  el.innerHTML = `<span class="l-t">${t}</span><span class="l-lv">[${LVL[lv]||'INFO'}]</span><span class="l-ms">${String(msg).replace(/</g,'&lt;')}</span>`;
-  logWrap.appendChild(el);
-  logWrap.scrollTop = logWrap.scrollHeight;
-  while (logWrap.children.length > 80) logWrap.removeChild(logWrap.firstChild);
-}
 
 /* ─────────────────────────────────────────────────
    SPEECH BAR
@@ -555,8 +519,7 @@ function loadVoices() {
     if (!ttsVoice && v.lang.startsWith('en')) { o.selected=true; ttsVoice=v; }
     sel.appendChild(o);
   });
-  sel.onchange = () => { ttsVoice = vs[+sel.value]; log(`Voice → ${ttsVoice.name}`,'debug'); };
-  log(`${vs.length} TTS voices ready`,'debug');
+  sel.onchange = () => { ttsVoice = vs[+sel.value]; };
 }
 if (typeof speechSynthesis !== 'undefined') {
   if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
@@ -573,7 +536,6 @@ function speak(text) {
     setFace('speaking'); startSpeakAnim();
     showSpeech('speaking', text);
     setHeader('teal','SPEAKING');
-    log(`TTS → "${text.slice(0,50)}${text.length>50?'…':''}"`, 'info');
   };
   u.onboundary = e => {
     if (e.name==='word') renderWords(text, text.slice(0,e.charIndex).trim().split(/\s+/).length-1);
@@ -581,12 +543,10 @@ function speak(text) {
   u.onend = () => {
     stopSpeakAnim(); setFace('neutral');
     hideSpeech(); setHeader('','ONLINE');
-    log('TTS done','debug');
   };
   u.onerror = e => {
     stopSpeakAnim(); setFace('error');
     hideSpeech(); setHeader('','ONLINE');
-    log(`TTS error: ${e.error}`,'error');
     setTimeout(()=>setFace('neutral'),2000);
   };
   speechSynthesis.speak(u);
@@ -606,10 +566,10 @@ let recog=null, micOn=false;
 
 function initRecog() {
   const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-  if (!SR) { log('SpeechRecognition not supported in this browser','warn'); return false; }
+  if (!SR) { return false; }
   recog = new SR();
   recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onstart  = () => { micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setHeader('teal','LISTENING'); log('Listening…','info'); };
+  recog.onstart  = () => { micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setHeader('teal','LISTENING'); };
   recog.onresult = e => {
     let interim='',final='';
     for (let i=e.resultIndex;i<e.results.length;i++) {
@@ -617,19 +577,18 @@ function initRecog() {
       if (e.results[i].isFinal) final+=t; else interim+=t;
     }
     showSpeech('listening', final||interim);
-    if (final.trim()) { log(`STT → "${final.trim()}"`, 'ok'); sendToWs({type:'text',content:final.trim()}); }
+    if (final.trim()) { sendToWs({type:'text',content:final.trim()}); }
   };
-  recog.onerror = e => { if(e.error==='no-speech') return; log(`STT error: ${e.error}`,'error'); stopMic(); };
+  recog.onerror = e => { if(e.error==='no-speech') return; stopMic(); };
   recog.onend   = () => { if (micOn) try { recog.start(); } catch(_) {} };
   return true;
 }
 
 function toggleMic() { micOn ? stopMic() : startMic(); }
-function startMic()  { if(!recog && !initRecog()) return; micOn=true; try { recog.start(); } catch(e){log('Mic start: '+e.message,'error');} }
+function startMic()  { if(!recog && !initRecog()) return; micOn=true; try { recog.start(); } catch(e){} }
 function stopMic()   {
   micOn=false; try { recog&&recog.stop(); } catch(_) {}
   setMicUI(false); setFace('neutral'); hideSpeech(); setHeader('ok','ONLINE');
-  log('Microphone off','debug');
 }
 function setMicUI(on) {
   document.getElementById('micBtn').classList.toggle('on',on);
@@ -646,7 +605,6 @@ txtInput.addEventListener('keydown', e => {
 
 function sendText() {
   const t = txtInput.value.trim(); if (!t) return;
-  log(`You → "${t.slice(0,60)}"`, 'ok');
   sendToWs({type:'text', content:t});
   setFace('thinking');
   txtInput.value='';
@@ -662,20 +620,19 @@ function toggleConnect() { wsConn ? wsClose() : wsOpen(); }
 function wsOpen() {
   const url = document.getElementById('wsUrl').value.trim();
   if (!url) return;
-  log(`Connecting → ${url}`,'info');
   try {
     ws = new WebSocket(url);
-    ws.onopen    = () => { wsConn=true;  setConnUI(true);  log('Connected','ok'); };
-    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch(_){ log('Recv: '+e.data,'debug'); } };
-    ws.onclose   = () => { wsConn=false; ws=null; setConnUI(false); log('Disconnected','warn'); };
-    ws.onerror   = () => log('WebSocket error','error');
-  } catch(e) { log('Failed: '+e.message,'error'); }
+    ws.onopen    = () => { wsConn=true;  setConnUI(true); };
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch(_){} };
+    ws.onclose   = () => { wsConn=false; ws=null; setConnUI(false); };
+    ws.onerror   = () => {};
+  } catch(e) {}
 }
 
-function wsClose() { ws&&ws.close(); wsConn=false; ws=null; setConnUI(false); log('Closed','info'); }
+function wsClose() { ws&&ws.close(); wsConn=false; ws=null; setConnUI(false); }
 
 function sendToWs(d) {
-  if (!ws||!wsConn) { log('Not connected','warn'); return; }
+  if (!ws||!wsConn) { return; }
   ws.send(JSON.stringify(d));
 }
 
@@ -687,8 +644,6 @@ function onMsg(m) {
       break;
     case 'expression': setFace(m.expression||'neutral'); break;
     case 'speak':      speak(m.content||''); break;
-    case 'log':        log(m.message||'', m.level||'info'); break;
-    default: log(`Unknown: ${m.type}`,'warn');
   }
 }
 
@@ -719,7 +674,6 @@ function setHeader(pip, label) {
 const settingsEl = document.getElementById('settings');
 function toggleSettings() { settingsEl.classList.toggle('open'); }
 
-// Close settings when clicking outside
 document.addEventListener('click', e => {
   if (!settingsEl.contains(e.target) && !document.querySelector('.btn-cog').contains(e.target))
     settingsEl.classList.remove('open');
@@ -728,12 +682,15 @@ document.addEventListener('click', e => {
 /* ─────────────────────────────────────────────────
    BOOT
 ───────────────────────────────────────────────── */
+const defaultWsUrl = `ws://${window.location.host}/ws`;
+document.getElementById('wsUrl').value = defaultWsUrl;
 setFace('neutral');
-log('AI Interface ready','ok');
-log('Open ⚙ → connect your backend at ws://localhost:8000/ws','info');
-log('Voice: click mic  |  Text: type + enter','info');
 
-setTimeout(()=>{ setFace('happy'); setTimeout(()=>setFace('neutral'),550); }, 400);
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (!wsConn) toggleConnect();
+  }, 100);
+});
 </script>
 </body>
 </html>

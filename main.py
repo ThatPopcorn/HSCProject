@@ -1,590 +1,307 @@
 #!/usr/bin/env python3
 """
-AI-Controlled Tamagotchi — terminal edition
-============================================
+AI-Controlled Tamagotchi — Web Dashboard Edition
+================================================
 
-Flow
-----
-  neutral   → idle between turns
-  listening → waiting for input  (SPACE = speak, or type)
-  thinking  → model generating
-  speaking  → response plays back word-by-word + audio; any key interrupts
+This module acts as the central brain. It loads the LLM, manages conversation
+history, and runs the FastAPI web server for the frontend dashboard.
 
-Dependencies
-------------
-    pip install transformers torch huggingface_hub
-    pip install pyttsx3 vosk sounddevice pynput
+Dependencies:
+    pip install fastapi uvicorn transformers torch huggingface_hub
 
-Env
----
-    TAMA_MODEL       HuggingFace model id  (default: Phi-3.5-mini-instruct)
-    TAMA_MODELS_DIR  local model cache dir (default: ./models)
-    VOSK_MODEL       path to vosk model   (default: ./vosk-model-small-en-us-0.15)
+To Run:
+    python main.py
+
+Then open http://localhost:8000 in your browser.
 """
 
-import argparse
-import sys
-
-if sys.platform == "win32":
-    import msvcrt as _msvcrt
-    _kbhit  = _msvcrt.kbhit
-    _getwch = _msvcrt.getwch
-    _NL     = "\n"
-
-    class _raw_term:
-        def __enter__(self): return self
-        def __exit__(self, *_): pass
-else:
-    import select
-    import termios
-    import tty
-
-    def _kbhit() -> bool:
-        return bool(select.select([sys.stdin], [], [], 0)[0])
-
-    def _getwch() -> str:
-        return sys.stdin.read(1)
-
-    _NL = "\r\n"
-
-    class _raw_term:
-        def __enter__(self):
-            self._fd  = sys.stdin.fileno()
-            self._old = termios.tcgetattr(self._fd)
-            tty.setraw(self._fd)
-            return self
-        def __exit__(self, *_):
-            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
-
+import asyncio
+import json
+import logging
 import os
-import random
-import textwrap
-import threading
-import time
+import re
+import requests
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from voice_loop import TTS, STT, Button
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+
 from inline_commands import prefetch_context, resolve as resolve_commands
 
-
 # ──────────────────────────────────────────────────────────────────────────
-# Config
+# Configuration & Setup
 # ──────────────────────────────────────────────────────────────────────────
 
-MODEL_NAME     = os.environ.get("TAMA_MODEL", "Qwen2.5-0.5B-Instruct")
-MAX_NEW_TOKENS = 200
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
+MODEL_NAME     = os.environ.get("TAMA_MODEL", "qwen3.5:2b")
+MAX_NEW_TOKENS = 600
 HISTORY_TURNS  = 8
+OLLAMA_API     = os.environ.get("TAMA_OLLAMA_API", "http://localhost:11434")
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-MODELS_DIR = Path(os.environ.get("TAMA_MODELS_DIR", SCRIPT_DIR / "models")).resolve()
-VOSK_PATH  = Path(os.environ.get("VOSK_MODEL",
-                  SCRIPT_DIR / "vosk-model-small-en-us-0.15"))
+SCRIPT_DIR     = Path(__file__).resolve().parent
+HTML_PATH      = SCRIPT_DIR / "ai-interface.html"
 
-PIXEL_ON     = "██"
-PIXEL_OFF    = "  "
-CLEAR_SCREEN = "\033[2J\033[H"
-
-if sys.platform == "win32":
-    os.system("")  # enable ANSI escapes
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Faces  (16×16 sprites)
-# ──────────────────────────────────────────────────────────────────────────
-
-FACES: Dict[str, List[str]] = {
-    "neutral": [
-        "................",
-        "................",
-        "................",
-        "................",
-        "....##....##....",
-        "....##....##....",
-        "................",
-        "................",
-        "................",
-        "................",
-        "................",
-        ".....######.....",
-        "................",
-        "................",
-        "................",
-        "................",
-    ],
-    "listening": [
-        "................",
-        "................",
-        "................",
-        "...####..####...",
-        "..#####..#####..",
-        "...####..####...",
-        "................",
-        "................",
-        "................",
-        "................",
-        "................",
-        ".....######.....",
-        "................",
-        "................",
-        "................",
-        "................",
-    ],
-    "thinking": [
-        "................",
-        "................",
-        "................",
-        "................",
-        "..######.######.",
-        "................",
-        "................",
-        "................",
-        "................",
-        "................",
-        "................",
-        "......####......",
-        "......####......",
-        "................",
-        "................",
-        "................",
-    ],
-    "speaking": [
-        "................",
-        "................",
-        "................",
-        "................",
-        "....##....##....",
-        "....##....##....",
-        "................",
-        "................",
-        "................",
-        "................",
-        ".....######.....",
-        "....##....##....",
-        "....##....##....",
-        "....##....##....",
-        ".....######.....",
-        "................",
-    ],
-}
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Pet
-# ──────────────────────────────────────────────────────────────────────────
-
-class Pet:
-    def __init__(self):
-        self.face:              str = "neutral"
-        self.speech:            str = ""
-        self.last_raw_response: str = ""
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Display
-# ──────────────────────────────────────────────────────────────────────────
-
-def render_face(sprite: List[str]) -> str:
-    return "\n".join(
-        "  " + "".join(PIXEL_ON if c == "#" else PIXEL_OFF for c in row)
-        for row in sprite
-    )
-
-
-_FACE_LABEL = {
-    "neutral":   "waiting",
-    "listening": "SPACE to speak  ·  or type below",
-    "thinking":  None,   # animated dots go into pet.speech
-    "speaking":  None,   # response text goes into pet.speech
-}
-
-
-def render(pet: Pet) -> None:
-    sprite = FACES.get(pet.face, FACES["neutral"])
-    parts  = [CLEAR_SCREEN, render_face(sprite), ""]
-
-    # Prefer actual speech content; fall back to state label when empty
-    content = pet.speech or _FACE_LABEL.get(pet.face, "")
-
-    if content:
-        wrapped = textwrap.wrap(content, width=56)
-        if pet.face == "speaking":
-            # Quote the spoken response
-            if len(wrapped) == 1:
-                parts.append(f'  "{wrapped[0]}"')
-            else:
-                parts.append(f'  "{wrapped[0]}')
-                for line in wrapped[1:-1]:
-                    parts.append(f"   {line}")
-                parts.append(f'   {wrapped[-1]}"')
-        else:
-            for line in wrapped:
-                parts.append(f"  {line}")
-
-    parts.append("")
-
-    print("\n".join(parts), flush=True)
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Thinking animation
-# ──────────────────────────────────────────────────────────────────────────
-
-_THINK_FRAMES = ["·", "· ·", "· · ·", "· ·"]
-
-
-def _think_anim(pet: Pet, stop: threading.Event) -> None:
-    """Cycle dots in pet.speech while the model generates."""
-    i = 0
-    while not stop.is_set():
-        pet.speech = _THINK_FRAMES[i % len(_THINK_FRAMES)]
-        render(pet)
-        i += 1
-        stop.wait(0.45)
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Voice helpers  (wired to the voice_loop library)
-# ──────────────────────────────────────────────────────────────────────────
-
-def transcribe_voice(pet: Pet, stt: STT, button: Button) -> str:
-    """
-    Record until the user presses SPACE again; return the transcript.
-    Partial results are shown as pet.speech so the face appears to hear.
-    """
-    pet.face   = "listening"
-    pet.speech = ""
-    render(pet)
-
-    result: dict = {"text": ""}
-
-    def on_partial(text: str) -> None:
-        pet.speech = text
-        render(pet)
-
-    def worker() -> None:
-        result["text"] = stt.listen(on_partial=on_partial)
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-
-    button.wait()   # second SPACE press ends recording
-    stt.stop()
-    t.join()
-
-    pet.face   = "thinking"
-    pet.speech = ""
-    render(pet)
-
-    return result["text"]
-
-
-def speak(pet: Pet, text: str, tts: TTS, button: Button) -> None:
-    """Show the full response immediately, play TTS, wait for finish or interrupt."""
-    pet.face   = "speaking"
-    pet.speech = text
-    render(pet)
-
-    t = threading.Thread(target=tts.speak, args=(text,), daemon=True)
-    t.start()
-
-    with _raw_term():
-        while t.is_alive():
-            if button.is_set() or _kbhit():
-                button.clear()
-                if _kbhit():
-                    _getwch()
-                tts.stop()
-                t.join()
-                break
-            time.sleep(0.03)
-
-    pet.face = "neutral"
-    # pet.speech kept intentionally — get_input_line clears it on first keypress
-    render(pet)
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Input  — msvcrt custom reader; SPACE on empty line = voice trigger
-# ──────────────────────────────────────────────────────────────────────────
-
-_VOICE = "__VOICE__"
-
-
-def get_input_line(pet: Pet, button: Button) -> str:
-    pet.face = "listening"
-    # Keep pet.speech from last response — shows in the bubble until first keypress
-    render(pet)
-
-    line: List[str] = []
-
-    with _raw_term():
-        sys.stdout.write(_NL + "  you > ")
-        sys.stdout.flush()
-
-        while True:
-            if not _kbhit():
-                time.sleep(0.01)
-                continue
-
-            raw = _getwch()
-
-            # Clear last response on first interaction so it doesn't linger
-            if pet.speech:
-                pet.speech = ""
-
-            if raw in ("\x00", "\xe0"):   # Windows extended key — discard second byte
-                _getwch()
-                continue
-
-            if raw == "\x1b":             # Linux escape sequence (arrow keys etc.)
-                while _kbhit():
-                    _getwch()
-                continue
-
-            if raw == "\x03":             # Ctrl+C
-                raise KeyboardInterrupt
-
-            if raw in ("\r", "\n"):       # Enter
-                sys.stdout.write(_NL)
-                sys.stdout.flush()
-                return "".join(line)
-
-            if raw in ("\x08", "\x7f"):   # Backspace (\x7f on Linux)
-                if line:
-                    line.pop()
-                    sys.stdout.write("\b \b")
-                    sys.stdout.flush()
-                continue
-
-            if raw == " " and not line:   # SPACE on empty line → voice
-                button.clear()            # pynput also fired; clear it now
-                sys.stdout.write("[voice]" + _NL)
-                sys.stdout.flush()
-                return _VOICE
-
-            if ord(raw) >= 32:            # printable
-                line.append(raw)
-                sys.stdout.write(raw)
-                sys.stdout.flush()
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# System prompt
-# ──────────────────────────────────────────────────────────────────────────
+VALID_EXPRESSIONS = {"neutral", "happy", "sad", "surprised", "thinking", "sleeping", "speaking", "error"}
 
 SYSTEM_PROMPT = (
     "You are a tiny digital companion living on a small screen. "
-    "You are not an animal — you have no paws, fur, or animal sounds. "
     "You are a small, curious, warm presence: thoughtful, a little playful, "
     "and genuinely interested in your owner. "
     "Reply in one or two short sentences. No emojis, no sound effects, no animal mannerisms. "
     "Live data such as the current time, date, or weather may appear in the user message — "
-    "use it naturally in your reply."
+    "use it naturally in your reply.\n\n"
+    "IMPORTANT: You have a face. You MUST start every response with a mood tag in brackets. "
+    "Choose one of: [neutral], [happy], [sad], [surprised].\n"
+    "Example: [happy] It's so nice to see you!\n"
+    "Example: [surprised] Oh wow, I didn't know that."
 )
 
+# Runtime status flags for diagnostics
+MODEL_LOADED = False
+MODEL_ERROR: str | None = None
+SERVER_RUNNING = False
+
 
 # ──────────────────────────────────────────────────────────────────────────
-# LLM
+# AI Pet Controller (Model & Memory)
 # ──────────────────────────────────────────────────────────────────────────
 
-def ensure_model_local(repo_id: str) -> Path:
-    from huggingface_hub import snapshot_download
+class AIPet:
+    def __init__(self, mock: bool = False):
+        self.mock = mock
+        self.history: List[Dict[str, str]] = []
+        self._reset_memory()
+        
+        if self.mock:
+            log.info("Running in MOCK mode (no model loaded).")
+        else:
+            log.info(f"Using Ollama model: {MODEL_NAME}")
+            log.info(f"Ollama API endpoint: {OLLAMA_API}")
+            # Verify Ollama is running
+            self._check_ollama()
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    local_path = MODELS_DIR / repo_id.split("/")[-1]
+    def _reset_memory(self):
+        self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    if (local_path / "config.json").exists():
+    def _check_ollama(self):
+        """Verify Ollama is running and model is available."""
         try:
-            snapshot_download(repo_id=repo_id, local_dir=str(local_path),
-                              local_files_only=True)
-            return local_path
-        except Exception:
-            print("  local copy incomplete, fetching missing files...")
+            resp = requests.get(f"{OLLAMA_API}/api/tags", timeout=2)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Ollama API returned {resp.status_code}")
+            
+            models = resp.json().get("models", [])
+            model_names = [m["name"] for m in models]
+            
+            if not any(MODEL_NAME in name for name in model_names):
+                log.warning(
+                    f"Model '{MODEL_NAME}' not found in Ollama.\n"
+                    f"Available: {model_names}\n"
+                    f"Pull it with: ollama pull {MODEL_NAME}"
+                )
+            else:
+                log.info(f"Model '{MODEL_NAME}' is available in Ollama")
+                
+        except requests.ConnectionError:
+            raise RuntimeError(
+                f"Cannot connect to Ollama at {OLLAMA_API}\n"
+                "Make sure Ollama is running. Install from https://ollama.ai"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Ollama health check failed: {e}")
 
-    if not (local_path / "config.json").exists():
-        print(f"  downloading {repo_id} → {local_path}")
-        print("  one-time download; a 3B model in fp16 is ~6 GB.")
+    def get_response(self, user_text: str) -> dict:
+        """Processes user input and returns a dict with content and expression."""
+        
+        # Handle slash commands
+        if user_text.lower() == "/clear":
+            self._reset_memory()
+            return {"content": "My memory has been cleared.", "expression": "happy"}
+        
+        # 1. Prefetch Live Context
+        ctx = prefetch_context(user_text)
+        prompt_text = f"[{ctx}]\n{user_text}" if ctx else user_text
 
-    snapshot_download(repo_id=repo_id, local_dir=str(local_path))
-    return local_path
+        # 2. Update History
+        self.history.append({"role": "user", "content": prompt_text})
+        if len(self.history) > 1 + HISTORY_TURNS * 2:
+            self.history = [self.history[0]] + self.history[-HISTORY_TURNS * 2:]
 
+        # 3. Generate Reply
+        if self.mock:
+            raw_response = "[happy] I am just a mock bot right now!"
+        else:
+            try:
+                # Call Ollama API with chat history
+                resp = requests.post(
+                    f"{OLLAMA_API}/api/chat",
+                    json={
+                        "model": MODEL_NAME,
+                        "messages": self.history,
+                        "stream": False,
+                        "think": False,
+                        "options": {
+                            "temperature": 0.8,
+                            "top_p": 0.9,
+                            "num_predict": MAX_NEW_TOKENS,
+                        }
+                    },
+                    timeout=30,
+                )
+                
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Ollama API error: {resp.text}")
+                
+                data = resp.json()
+                message = data.get("message", {})
+                raw_response = (message.get("content") or "").strip()
+                if not raw_response:
+                    raw_response = (message.get("thinking") or "").strip()
+                    if raw_response:
+                        log.info("Ollama returned thinking output as content fallback")
+                    else:
+                        log.warning("Ollama response contained no content or thinking text")
+                        log.debug(f"Raw Ollama message: {message}")
+                
+            except requests.ConnectionError:
+                return {
+                    "content": "[error] Ollama is not running. Start it with: ollama serve",
+                    "expression": "error",
+                }
+            except Exception as e:
+                log.error(f"Ollama generation failed: {e}")
+                return {
+                    "content": f"[error] Generation failed: {str(e)[:50]}",
+                    "expression": "error",
+                }
 
-def load_model():
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+        # 4. Resolve trailing inline commands (if the model generated any)
+        raw_response = resolve_commands(raw_response)
 
-    local_path = ensure_model_local(MODEL_NAME)
+        # 5. Parse out the Expression tag (e.g. "[happy] Hello there!")
+        expression = "neutral"
+        content = raw_response
+        
+        match = re.match(r'^\[(.*?)\]\s*(.*)', raw_response, re.DOTALL)
+        if match:
+            parsed_expr = match.group(1).lower()
+            if parsed_expr in VALID_EXPRESSIONS:
+                expression = parsed_expr
+            content = match.group(2)
 
-    if torch.cuda.is_available():
-        device, dtype = "cuda", torch.float16
-    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        device, dtype = "mps", torch.float16
-    else:
-        device, dtype = "cpu", torch.float32
+        # Add to history (without context brackets to save clean history)
+        self.history.append({"role": "assistant", "content": raw_response})
 
-    tok   = AutoTokenizer.from_pretrained(str(local_path))
-    model = AutoModelForCausalLM.from_pretrained(
-                str(local_path), dtype=dtype).to(device)
-    model.eval()
-    return tok, model, device
-
-
-def generate(tok, model, device, messages) -> str:
-    import torch
-    prompt = tok.apply_chat_template(messages, tokenize=False,
-                                     add_generation_prompt=True)
-    inputs = tok(prompt, return_tensors="pt").to(device)
-    with torch.inference_mode():
-        out = model.generate(
-            **inputs,
-            max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=True,
-            temperature=0.8,
-            top_p=0.9,
-            pad_token_id=tok.eos_token_id,
-        )
-    return tok.decode(
-        out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
-    ).strip()
+        return {
+            "content": content.strip(),
+            "expression": expression,
+        }
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Mock
+# Web Server & Endpoints
 # ──────────────────────────────────────────────────────────────────────────
 
-MOCK_RESPONSES = [
-    "Hi there! I'm glad you reached out. What's on your mind?",
-    "That sounds really interesting. Tell me more.",
-    "I've been thinking about that too, actually.",
-    "Hmm, that's a tough one. But I believe in you.",
-    "You're back! I was starting to wonder where you'd gone.",
-    "That made me feel something. Not sure what, but something.",
-]
+app = FastAPI()
 
 
-def mock_generate(_) -> str:
-    return random.choice(MOCK_RESPONSES)
+@app.get("/status")
+async def status():
+    """Return server and model status for diagnostics."""
+    return {
+        "server_running": SERVER_RUNNING,
+        "model_loaded": MODEL_LOADED,
+        "model_error": MODEL_ERROR,
+    }
 
+@app.get("/")
+async def index():
+    if not HTML_PATH.exists():
+        return HTMLResponse("<h1>ai-interface.html not found next to main.py</h1>", status_code=404)
+    return HTMLResponse(HTML_PATH.read_text(encoding="utf-8"))
 
-# ──────────────────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────────────────
+@app.get("/.well-known/appspecific/com.chrome.devtools.json")
+async def chrome_devtools_probe():
+    return {"name": "com.chrome.devtools", "type": "app-specific"}
 
-def main():
-    parser = argparse.ArgumentParser(description="AI-controlled terminal Tamagotchi")
-    parser.add_argument("--mock",  action="store_true",
-                        help="canned responses, no model load")
-    args = parser.parse_args()
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    addr = f"{websocket.client.host}:{websocket.client.port}"
+    log.info(f"[ws] connected  {addr}")
 
-
-    pet = Pet()
-    render(pet)
-
-    # ── TTS ───────────────────────────────────────────────────────────────
-    tts = TTS()
-
-    # ── STT ───────────────────────────────────────────────────────────────
-    stt_ok = False
-    stt: Optional[STT] = None
-    try:
-        stt    = STT(model_path=VOSK_PATH)
-        stt_ok = True
-    except Exception as exc:
-        print(f"  STT off: {exc}")
-
-    # ── Button (SPACE) ────────────────────────────────────────────────────
-    button = Button()
-    button.start()
-
-    # ── LLM ───────────────────────────────────────────────────────────────
-    if args.mock:
-        gen = lambda hist: mock_generate(hist)
-        print("  [mock]")
-    else:
-        print(f"  loading {MODEL_NAME}...")
-        tok, model, device = load_model()
-        gen = lambda hist: generate(tok, model, device, hist)
-
-    if stt_ok:
-        print("  Press SPACE to speak.")
-
-    history = [{"role": "system", "content": SYSTEM_PROMPT}]
+    async def send(data: dict):
+        await websocket.send_text(json.dumps(data))
 
     try:
         while True:
+            raw = await websocket.receive_text()
+
             try:
-                user_input = get_input_line(pet, button)
-            except (EOFError, KeyboardInterrupt):
-                break
-
-            if user_input == _VOICE:
-                if stt_ok:
-                    user_input = transcribe_voice(pet, stt, button)
-                else:
-                    continue
-
-            if not user_input:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                log.warning(f"[ws] bad JSON: {raw[:80]}")
                 continue
 
-            if user_input.startswith("/"):
-                cmd = user_input.lower()
-                if cmd == "/clear":
-                    # clear the chatbots memory but keep the system prompt
-                    history = [history[0]]
-                    print("  memory cleared.")           
-                elif cmd == "/help":
-                    print("  SPACE   voice input (press again to stop)")
-                    print("  /quit   exit")
-                elif cmd in ("/quit", "/exit"):
-                    break
-                else:
-                    print(f"  unknown: {user_input}")
-                continue
+            msg_type = msg.get("type", "")
+            content  = msg.get("content", "").strip()
 
-            pet.face   = "thinking"
-            pet.speech = _THINK_FRAMES[0]
-            render(pet)
+            if msg_type == "text" and content:
+                log.info(f"[ws] ← User: {content[:80]}")
 
-            history.append({"role": "user", "content": user_input})
-            if len(history) > 1 + HISTORY_TURNS * 2:
-                history = [history[0]] + history[-HISTORY_TURNS * 2:]
+                # Show thinking face while generation happens
+                await send({"type": "expression", "expression": "thinking"})
 
-            stop_anim = threading.Event()
-            anim_t    = threading.Thread(
-                target=_think_anim, args=(pet, stop_anim), daemon=True)
-            anim_t.start()
+                try:
+                    # Model is already loaded at startup, just use it
+                    result = pet.get_response(content)
+                    
+                    # Send response back to the browser
+                    await send({"type": "response", **result})
+                    log.info(f"[ws] → AI [{result['expression']}]: {result['content'][:80]}")
 
-            ctx = prefetch_context(user_input)
-            if ctx:
-                gen_history = history[:-1] + [
-                    {"role": "user", "content": f"[{ctx}]\n{user_input}"}
-                ]
-            else:
-                gen_history = history
-            response = gen(gen_history)
-            response = resolve_commands(response)
+                except Exception as e:
+                    log.error(f"[ws] model error: {e}")
+                    await send({"type": "expression", "expression": "error"})
 
-            stop_anim.set()
-            anim_t.join()
-            pet.speech = ""
-
-            history.append({"role": "assistant", "content": response})
-            pet.last_raw_response = response
-
-            if response.strip():
-                speak(pet, response, tts, button)
-            else:
-                pet.face = "neutral"
-                render(pet)
-
-    finally:
-        print("\n  bye!")
-        tts.stop()
-        if stt_ok:
-            stt.stop()
-        button.stop()
+    except WebSocketDisconnect:
+        log.info(f"[ws] disconnected  {addr}")
 
 
 if __name__ == "__main__":
-    main()
+    log.info("Initializing AI Backend...")
+    
+    # Load model eagerly at startup to verify everything works
+    mock_flag = os.environ.get("TAMA_MOCK", "0").lower() in ("1", "true", "yes")
+    
+    try:
+        pet = AIPet(mock=mock_flag)
+        MODEL_LOADED = not pet.mock
+        log.info("Model loaded successfully and ready for chat!")
+        
+    except Exception as e:
+        MODEL_LOADED = False
+        MODEL_ERROR = str(e)
+        log.error(f"Failed to load model: {e}")
+        print(f"\nCannot start server: {e}")
+        exit(1)
+    
+    # Defer importing uvicorn so quick runs without it don't fail at import-time.
+    try:
+        import uvicorn
+    except Exception as e:
+        log.error(f"uvicorn import failed: {e}")
+        print("uvicorn is required to run the server. Install with: pip install uvicorn[standard]")
+    else:
+        # Running locally for now; change host to "0.0.0.0" to expose externally again.
+        SERVER_RUNNING = True
+        log.info("Starting Web Server...")
+        log.info("Web Server starting on http://127.0.0.1:2492")
+        uvicorn.run(app, host="127.0.0.1", port=2492, log_level="info")
