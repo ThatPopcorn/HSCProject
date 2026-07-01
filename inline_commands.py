@@ -172,3 +172,38 @@ def run_first(text: str):
         return (token, f"(unknown command: {name})")
     fn, _ = entry
     return (token, fn(arg))
+
+
+# A leading mood tag like "[happy] " that a bare command might be prefixed with.
+_MOOD_RE = re.compile(r'^\s*\[[a-z]+\]\s*', re.IGNORECASE)
+
+
+def detect_command(text: str):
+    """Find a command in text and run it, returning (token, result) or None.
+
+    Handles two forms:
+      1. The strict  [cmd:NAME(arg)]  token anywhere in the text (via run_first).
+      2. A BARE invocation — e.g. "GETWEATHER(Sydney)", "GETTIME", "GETWEATHER Sydney",
+         or "cmd:GETWEATHER(Sydney)" — but ONLY when it is the entire reply (after an
+         optional mood tag). Small models routinely drop the [cmd:...] wrapper; this
+         recovers those. Requiring the whole reply to be the command avoids firing on
+         a command name that merely appears inside a normal sentence.
+    """
+    # 1) strict form (also covers [cmd:list] handling by the caller)
+    strict = run_first(text)
+    if strict is not None:
+        return strict
+
+    # 2) bare form: strip an optional leading mood tag, then match the WHOLE remainder
+    stripped = _MOOD_RE.sub('', text).strip()
+    for name in sorted(_REGISTRY.keys(), key=len, reverse=True):   # longest name first
+        m = re.match(
+            rf'^\[?\s*(?:cmd:)?\s*{re.escape(name)}\s*(?:\((.*)\)|\s+(\S.*?))?\s*\]?$',
+            stripped, re.IGNORECASE,
+        )
+        if m:
+            arg = m.group(1) if m.group(1) is not None else m.group(2)
+            arg = arg.strip() if arg else None
+            fn, _ = _REGISTRY[name]
+            return (stripped, fn(arg))
+    return None

@@ -29,7 +29,7 @@ from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from inline_commands import command_list, has_commands, run_first
+from inline_commands import command_list, detect_command
 
 # ──────────────────────────────────────────────────────────────────────────
 # Configuration & Setup
@@ -300,36 +300,38 @@ class AIPet:
             reply = content   # the user-facing reply is ALWAYS the content channel
             log.debug(f"[agent iter {iteration}] content: {content[:100]!r}")
 
-            # Where might a command be? Prefer content; fall back to thinking.
-            cmd_source = None
-            if has_commands(content):
-                cmd_source = content
-            elif has_commands(thinking):
-                cmd_source = thinking
-                log.info(f"[agent] iter {iteration}: recovered a command from the thinking channel")
+            # Explicit list request (rare now the list is inlined, but handle it).
+            list_src = content if "[cmd:list]" in content.lower() else \
+                       (thinking if "[cmd:list]" in thinking.lower() else None)
+            if list_src is not None:
+                cmds = command_list()
+                log.info(f"[agent] iter {iteration}: model requested [cmd:list]")
+                working.append({"role": "assistant", "content": "[cmd:list]"})
+                working.append({"role": "user",
+                                "content": f"[system: available commands — {cmds}]"})
+                continue
 
-            if cmd_source is not None:
-                # The model explicitly asked for the command list (rare now that
-                # the list is inlined in the system prompt, but handle it).
-                if "[cmd:list]" in cmd_source.lower():
-                    cmds = command_list()
-                    log.info(f"[agent] iter {iteration}: model requested [cmd:list]")
-                    working.append({"role": "assistant", "content": "[cmd:list]"})
-                    working.append({"role": "user",
-                                    "content": f"[system: available commands — {cmds}]"})
-                    continue
+            # A command? Prefer content; fall back to thinking. detect_command
+            # accepts both [cmd:NAME(arg)] and a bare NAME(arg) the model wrote
+            # without the wrapper, and returns only that command's result.
+            found = detect_command(content)
+            where = "content"
+            if found is None:
+                found = detect_command(thinking)
+                where = "thinking"
 
-                found = run_first(cmd_source)   # (token, result) or None
-                if found is not None:
-                    token, result = found
-                    log.info(f"[agent] iter {iteration}: {token} → {result[:80]}")
-                    # Append a CLEAN synthetic turn: just the command token, never
-                    # the raw content/thinking blob it may have been embedded in.
-                    working.append({"role": "assistant", "content": token})
-                    working.append({"role": "user",
-                                    "content": f"[system: result — {result}. "
-                                               "Now write your reply, starting with a mood tag.]"})
-                    continue
+            if found is not None:
+                token, result = found
+                if where == "thinking":
+                    log.info(f"[agent] iter {iteration}: recovered a command from the thinking channel")
+                log.info(f"[agent] iter {iteration}: {token} → {result[:80]}")
+                # Append a CLEAN synthetic turn: just the command, never the raw
+                # content/thinking blob it may have been embedded in.
+                working.append({"role": "assistant", "content": token})
+                working.append({"role": "user",
+                                "content": f"[system: result — {result}. "
+                                           "Now write your reply, starting with a mood tag.]"})
+                continue
 
             # No command anywhere → content is the final reply.
             log.info(f"[agent] iter {iteration}: final response received")
