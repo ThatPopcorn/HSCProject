@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import socket
 import time
 import requests
 from pathlib import Path
@@ -53,7 +54,7 @@ VALID_EXPRESSIONS = {"neutral", "happy", "sad", "surprised", "thinking", "sleepi
 # variables override the file (see load_config). Editing config.json is the
 # normal way to configure the app — no need to touch this source file.
 DEFAULTS = {
-    "model":           "gemma4:e2b",
+    "model":           "gemma4:e4b",
     "ollama_api":      "http://localhost:11434",
     "host":            "127.0.0.1",
     "port":            2492,
@@ -494,6 +495,18 @@ async def ws_endpoint(websocket: WebSocket):
 # Entry Point
 # ──────────────────────────────────────────────────────────────────────────
 
+def _lan_ip() -> str:
+    """Best-effort primary LAN IP of this machine (no packets are actually sent)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))   # picks the interface used for outbound traffic
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 if __name__ == "__main__":
     log.info("Initializing AI Backend...")
 
@@ -514,5 +527,11 @@ if __name__ == "__main__":
         print("uvicorn is required. Install with: pip install uvicorn[standard]")
     else:
         SERVER_RUNNING = True
-        log.info(f"Starting Web Server on http://{HOST}:{PORT}")
+        if HOST in ("0.0.0.0", "::"):
+            # Bound to all interfaces — tell the user the address other devices use.
+            log.info(f"Serving on all interfaces (port {PORT})")
+            log.info(f"  • this machine : http://localhost:{PORT}")
+            log.info(f"  • other devices: http://{_lan_ip()}:{PORT}")
+        else:
+            log.info(f"Starting Web Server on http://{HOST}:{PORT}")
         uvicorn.run(app, host=HOST, port=PORT, log_level="info")
