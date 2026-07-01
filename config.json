@@ -1,5 +1,5 @@
 {
-  "model": "gemma4:e4b",
+  "model": "gemma4:e2b",
   "ollama_api": "http://localhost:11434",
   "host": "0.0.0.0",
   "port": 2492,
