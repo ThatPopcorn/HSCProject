@@ -485,7 +485,13 @@ function initRecog(){
     }
     console.log('[stt] result', {interim, final});
     showSpeech('listening', final||interim);
-    if(final.trim()){ clearThoughts(); sendToWs({type:'text',content:final.trim()}); }
+    if(final.trim() && micOn){
+      const text = final.trim();
+      clearThoughts();
+      stopMic();              // finished an utterance → stop listening, reset the mic button.
+      setFace('thinking');    // (stopMic clears micOn, so a late buffered result can't re-submit)
+      sendToWs({type:'text', content:text});   // immediate "working on it" feedback
+    }
   };
 
   recog.onerror=e=>{
