@@ -28,7 +28,7 @@ from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from inline_commands import command_list, has_commands, resolve as resolve_cmd
+from inline_commands import command_list, has_commands, run_first
 
 # ──────────────────────────────────────────────────────────────────────────
 # Configuration & Setup
@@ -41,7 +41,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e2b")
+MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e4b")
 MAX_NEW_TOKENS = 600
 HISTORY_TURNS  = 8
 OLLAMA_API     = os.environ.get("TAMA_OLLAMA_API", "http://localhost:11434")
@@ -62,13 +62,13 @@ SYSTEM_PROMPT = (
     "Example: [happy] It's so nice to see you!\n\n"
 
     "LIVE DATA: You cannot know the current time, date, or weather on your own. "
-    "When you need this information, use the command system — do NOT guess.\n"
-    "Step 1 — output exactly this, nothing else:\n"
-    "  [cmd:list]\n"
-    "Step 2 — you will receive the available commands. Output only the command you need:\n"
-    "  [cmd:GETWEATHER(Sydney)]  or  [cmd:GETTIME]  etc.\n"
-    "Step 3 — you will receive the result. Now write your final reply with a mood tag.\n"
-    "Important: never include a mood tag when emitting a command. Only use commands when genuinely needed."
+    "When you need it, make your ENTIRE message a single command — no mood tag, "
+    "no other words, nothing else. Available commands:\n"
+    f"  {command_list()}\n"
+    "Example — for France's weather, output exactly:  [cmd:GETWEATHER(France)]\n"
+    "You will then be given the result, and you write your final reply (with a "
+    "mood tag). Only use a command when you genuinely need live data; otherwise "
+    "just reply normally."
 )
 
 # Runtime status flags for diagnostics
@@ -112,13 +112,13 @@ class AIPet:
 
     # ── Low-level: single Ollama call ──────────────────────────────────────
 
-    def _generate(self, messages: List[Dict], emit=None) -> str:
-        """Call Ollama and return the assistant's reply text (content only).
+    def _generate(self, messages: List[Dict], emit=None):
+        """Call Ollama and return a (content, thinking) tuple.
 
         Streams the response so that any `thinking` tokens can be forwarded
         live via `emit({"type": "thinking", "content": <delta>})` — that's what
-        drives the thought bar in the UI. Thinking is display-only; the value
-        returned here is always the model's actual reply (content channel).
+        drives the thought bar in the UI. `content` is the model's actual reply;
+        `thinking` is its reasoning (display-only, never shown as the reply).
 
         Does a fast pre-ping first so we fail in ~3 seconds if Ollama is down,
         rather than hanging for the full inference timeout.
@@ -140,8 +140,8 @@ class AIPet:
             log.warning(f"Model rejected thinking ({str(e)[:80]}); retrying without it")
             return self._stream_chat(messages, False, emit)
 
-    def _stream_chat(self, messages: List[Dict], think: bool, emit) -> str:
-        """One streaming /api/chat call. Returns the accumulated content text.
+    def _stream_chat(self, messages: List[Dict], think: bool, emit) -> tuple:
+        """One streaming /api/chat call. Returns a (content, thinking) tuple.
 
         Raises _ThinkingUnsupported if `think` was requested but the model
         does not support it (so the caller can retry without thinking).
@@ -204,15 +204,14 @@ class AIPet:
         finally:
             resp.close()
 
-        raw = "".join(content_parts).strip()
-        # Last-resort fallback: some models emit their whole answer in the
-        # thinking channel and leave content empty.
-        if not raw and thinking_parts:
-            raw = "".join(thinking_parts).strip()
-            log.info("No content channel; using thinking text as the reply")
-        if not raw:
+        content = "".join(content_parts).strip()
+        thinking = "".join(thinking_parts).strip()
+        if not content and not thinking:
             log.warning("Ollama response contained no content")
-        return raw
+        # Content and thinking are kept separate on purpose: the agent must
+        # search/answer from CONTENT, and only fall back to thinking as a last
+        # resort — never mix reasoning prose into the reply or the parser.
+        return content, thinking
 
     # ── Agent loop ─────────────────────────────────────────────────────────
 
@@ -220,51 +219,63 @@ class AIPet:
         """
         Run the tool-use loop against a working copy of the conversation.
 
-        The model can emit [cmd:list] to get the command list, then a specific
-        [cmd:NAME(arg)] to execute a command. Results are fed back as system
-        messages in the ephemeral working copy. Only the final reply is returned.
+        Each turn the model can emit a single [cmd:NAME(arg)] to fetch live
+        data; the result is fed back and it writes its final reply. We answer
+        from the CONTENT channel only. If content has no command we also check
+        the THINKING channel, because small models sometimes bury the command
+        in their reasoning — but we still run only that one command and feed
+        back only its result, never the surrounding prose.
 
         `emit`, if given, forwards live thinking tokens to the UI.
 
         working is mutated in-place (tool turns are appended here but never
         saved to self.history — the caller decides what to persist).
         """
-        raw = ""
+        reply = ""
         for iteration in range(MAX_TOOL_ITERS):
-            raw = self._generate(working, emit=emit)
-            stripped = raw.strip()
-            log.debug(f"[agent iter {iteration}] raw: {stripped[:120]}")
+            content, thinking = self._generate(working, emit=emit)
+            reply = content   # the user-facing reply is ALWAYS the content channel
+            log.debug(f"[agent iter {iteration}] content: {content[:100]!r}")
 
-            # ── Step 1: model wants the command list ──────────────────────
-            if "[cmd:list]" in stripped.lower():
-                cmds = command_list()
-                log.info(f"[agent] iter {iteration}: model requested [cmd:list]")
-                working.append({"role": "assistant", "content": raw})
-                working.append({
-                    "role":    "user",
-                    "content": f"[system: available commands — {cmds}]",
-                })
-                continue
+            # Where might a command be? Prefer content; fall back to thinking.
+            cmd_source = None
+            if has_commands(content):
+                cmd_source = content
+            elif has_commands(thinking):
+                cmd_source = thinking
+                log.info(f"[agent] iter {iteration}: recovered a command from the thinking channel")
 
-            # ── Step 2: model emitted a specific command ──────────────────
-            if has_commands(stripped):
-                result = resolve_cmd(stripped)
-                log.info(f"[agent] iter {iteration}: command resolved → {result[:80]}")
-                working.append({"role": "assistant", "content": raw})
-                working.append({
-                    "role":    "user",
-                    "content": f"[system: result — {result}. Now write your reply.]",
-                })
-                continue
+            if cmd_source is not None:
+                # The model explicitly asked for the command list (rare now that
+                # the list is inlined in the system prompt, but handle it).
+                if "[cmd:list]" in cmd_source.lower():
+                    cmds = command_list()
+                    log.info(f"[agent] iter {iteration}: model requested [cmd:list]")
+                    working.append({"role": "assistant", "content": "[cmd:list]"})
+                    working.append({"role": "user",
+                                    "content": f"[system: available commands — {cmds}]"})
+                    continue
 
-            # ── No commands: this is the final response ───────────────────
+                found = run_first(cmd_source)   # (token, result) or None
+                if found is not None:
+                    token, result = found
+                    log.info(f"[agent] iter {iteration}: {token} → {result[:80]}")
+                    # Append a CLEAN synthetic turn: just the command token, never
+                    # the raw content/thinking blob it may have been embedded in.
+                    working.append({"role": "assistant", "content": token})
+                    working.append({"role": "user",
+                                    "content": f"[system: result — {result}. "
+                                               "Now write your reply, starting with a mood tag.]"})
+                    continue
+
+            # No command anywhere → content is the final reply.
             log.info(f"[agent] iter {iteration}: final response received")
             break
 
         else:
             log.warning(f"[agent] hit MAX_TOOL_ITERS ({MAX_TOOL_ITERS}) without a final response")
 
-        return raw
+        return reply
 
     # ── Public entry point ─────────────────────────────────────────────────
 
@@ -312,6 +323,12 @@ class AIPet:
                     "expression": "error",
                 }
 
+        # Empty reply guard: if the model only reasoned (or produced nothing
+        # usable), don't show a blank bubble — give a gentle recoverable reply.
+        if not raw.strip():
+            log.info("Final reply was empty; using a graceful fallback")
+            raw = "[neutral] Sorry, I got a bit tangled up there — could you ask me again?"
+
         # Parse mood tag from the final response
         expression = "neutral"
         content    = raw
@@ -321,6 +338,10 @@ class AIPet:
             if parsed in VALID_EXPRESSIONS:
                 expression = parsed
             content = match.group(2)
+
+        # Belt-and-suspenders: strip any leftover [cmd:...] token so a stray
+        # command can never be shown to the user as literal text.
+        content = re.sub(r'\[cmd:[^\]]*\]', '', content).strip()
 
         # Persist only the final assistant reply (not tool turns)
         self.history.append({"role": "assistant", "content": raw})

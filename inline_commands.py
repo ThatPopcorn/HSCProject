@@ -136,7 +136,12 @@ def has_commands(text: str) -> bool:
 
 
 def resolve(text: str) -> str:
-    """Replace every [cmd:NAME] / [cmd:NAME(arg)] token in text with its result."""
+    """Replace every [cmd:NAME] / [cmd:NAME(arg)] token in text with its result.
+
+    NOTE: this rewrites the whole string. The agent loop should prefer
+    run_first(), which returns only a single command's result — feeding a
+    whole rewritten blob back to a small model tends to confuse it.
+    """
     def _sub(m: re.Match) -> str:
         name  = m.group(1).upper()
         arg   = m.group(2)
@@ -146,3 +151,24 @@ def resolve(text: str) -> str:
         fn, _ = entry
         return fn(arg)
     return _CMD_RE.sub(_sub, text)
+
+
+def run_first(text: str):
+    """Execute ONLY the first [cmd:...] token found in text.
+
+    Returns a (token, result) tuple — the literal token as matched, and just
+    that command's result string — or None if no command token is present.
+    Crucially this does NOT return the surrounding text, so reasoning prose
+    that happens to contain a command can't leak back into the conversation.
+    """
+    m = _CMD_RE.search(text)
+    if m is None:
+        return None
+    token = m.group(0)
+    name  = m.group(1).upper()
+    arg   = m.group(2)
+    entry = _REGISTRY.get(name)
+    if entry is None:
+        return (token, f"(unknown command: {name})")
+    fn, _ = entry
+    return (token, fn(arg))
