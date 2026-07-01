@@ -41,32 +41,97 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e4b")
-MAX_NEW_TOKENS = 600
-HISTORY_TURNS  = 8
-OLLAMA_API     = os.environ.get("TAMA_OLLAMA_API", "http://localhost:11434")
-MAX_TOOL_ITERS = 4   # [cmd:list] → [cmd:X(arg)] → final reply; 1 spare
+SCRIPT_DIR  = Path(__file__).resolve().parent
+HTML_PATH   = SCRIPT_DIR / "ai-interface.html"
+CONFIG_PATH = SCRIPT_DIR / "config.json"
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-HTML_PATH  = SCRIPT_DIR / "ai-interface.html"
-
+# Faces the frontend knows how to render — a contract with ai-interface.html,
+# not a user-tunable value, so it stays in code.
 VALID_EXPRESSIONS = {"neutral", "happy", "sad", "surprised", "thinking", "sleeping", "speaking", "error"}
 
-SYSTEM_PROMPT = (
-    "You are a small digital companion on a screen — warm, curious, helpful. "
-    "Answer what's actually asked with the specific details that matter; be "
-    "concrete, not generic. A few sentences when useful, but never pad or ramble. "
-    "No emojis.\n\n"
+# Built-in defaults. config.json overrides these per-key; a few environment
+# variables override the file (see load_config). Editing config.json is the
+# normal way to configure the app — no need to touch this source file.
+DEFAULTS = {
+    "model":           "gemma4:e2b",
+    "ollama_api":      "http://localhost:11434",
+    "host":            "127.0.0.1",
+    "port":            2492,
+    "mock":            False,
+    "max_new_tokens":  600,
+    "history_turns":   8,
+    "max_tool_iters":  4,
+    "temperature":     0.8,
+    "top_p":           0.9,
+    "request_timeout": 120,
+    "ping_timeout":    3,
+    "system_prompt": [
+        "You are a small digital companion on a screen \u2014 warm, curious, helpful. Answer what's actually asked with the specific details that matter; be concrete, not generic. A few sentences when useful, but never pad or ramble. No emojis.",
+        "",
+        "Start every reply with one mood tag: [neutral] [happy] [sad] [surprised]. e.g. [happy] Honey never spoils \u2014 it's basically immortal.",
+        "",
+        "You can't know the live time, date, or weather. When you need one, make your WHOLE message a single command \u2014 nothing else, no mood tag:",
+        "  {commands}",
+        "e.g. [cmd:GETWEATHER(France)] \u2014 you'll get the result, then reply normally with a mood tag. Only use a command when you truly need live data.",
+    ],
+}
 
-    "Start every reply with one mood tag: [neutral] [happy] [sad] [surprised]. "
-    "e.g. [happy] Honey never spoils — it's basically immortal.\n\n"
 
-    "You can't know the live time, date, or weather. When you need one, make your "
-    "WHOLE message a single command — nothing else, no mood tag:\n"
-    f"  {command_list()}\n"
-    "e.g. [cmd:GETWEATHER(France)] — you'll get the result, then reply normally "
-    "with a mood tag. Only use a command when you truly need live data."
-)
+def load_config() -> dict:
+    """Merge built-in DEFAULTS <- config.json <- environment variables.
+
+    Missing keys fall back to DEFAULTS, so a partial/old config.json still works.
+    If the file is absent we write a starter copy so it's easy to find and edit.
+    """
+    cfg = dict(DEFAULTS)
+    if CONFIG_PATH.exists():
+        try:
+            user = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            for k, v in user.items():
+                if v is not None:
+                    cfg[k] = v
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning(f"config.json is unreadable ({e}); using built-in defaults")
+    else:
+        try:
+            CONFIG_PATH.write_text(
+                json.dumps(DEFAULTS, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            log.info(f"No config.json found \u2014 wrote a starter one to {CONFIG_PATH}")
+        except OSError as e:
+            log.warning(f"Could not create config.json ({e}); using built-in defaults")
+
+    # Environment overrides \u2014 kept so container/CI tweaks (and the Codespaces
+    # localhost->127.0.0.1 fix) work without editing the file.
+    cfg["model"]      = os.environ.get("TAMA_MODEL", cfg["model"])
+    cfg["ollama_api"] = os.environ.get("TAMA_OLLAMA_API", cfg["ollama_api"])
+    env_mock = os.environ.get("TAMA_MOCK")
+    if env_mock is not None:
+        cfg["mock"] = env_mock.lower() in ("1", "true", "yes")
+    return cfg
+
+
+CONFIG          = load_config()
+MODEL_NAME      = CONFIG["model"]
+OLLAMA_API      = CONFIG["ollama_api"]
+MAX_NEW_TOKENS  = CONFIG["max_new_tokens"]
+HISTORY_TURNS   = CONFIG["history_turns"]
+MAX_TOOL_ITERS  = CONFIG["max_tool_iters"]
+TEMPERATURE     = CONFIG["temperature"]
+TOP_P           = CONFIG["top_p"]
+REQUEST_TIMEOUT = CONFIG["request_timeout"]
+PING_TIMEOUT    = CONFIG["ping_timeout"]
+HOST            = CONFIG["host"]
+PORT            = CONFIG["port"]
+MOCK            = CONFIG["mock"]
+
+# Assemble the system prompt: accept a list of lines or a plain string, then
+# inject the live command list in place of the {commands} placeholder.
+_sp = CONFIG["system_prompt"]
+if isinstance(_sp, list):
+    _sp = "\n".join(_sp)
+SYSTEM_PROMPT = _sp.replace("{commands}", command_list())
 
 # Runtime status flags for diagnostics
 MODEL_LOADED   = False
@@ -122,7 +187,7 @@ class AIPet:
         """
         # Pre-ping: fail fast if Ollama is not reachable at all.
         try:
-            requests.get(f"{OLLAMA_API}/api/tags", timeout=3)
+            requests.get(f"{OLLAMA_API}/api/tags", timeout=PING_TIMEOUT)
         except requests.exceptions.ConnectionError:
             raise RuntimeError("Ollama is not running — start it with: ollama serve")
         except requests.exceptions.Timeout:
@@ -152,13 +217,13 @@ class AIPet:
                     "stream":   True,
                     "think":    think,
                     "options": {
-                        "temperature": 0.8,
-                        "top_p":       0.9,
+                        "temperature": TEMPERATURE,
+                        "top_p":       TOP_P,
                         "num_predict": MAX_NEW_TOKENS,
                     },
                 },
                 stream=True,
-                timeout=120,
+                timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.ConnectionError:
             raise RuntimeError("Lost connection to Ollama mid-request")
@@ -432,10 +497,8 @@ async def ws_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     log.info("Initializing AI Backend...")
 
-    mock_flag = os.environ.get("TAMA_MOCK", "0").lower() in ("1", "true", "yes")
-
     try:
-        pet = AIPet(mock=mock_flag)
+        pet = AIPet(mock=MOCK)
         MODEL_LOADED = not pet.mock
         log.info("Model ready for chat!")
     except Exception as e:
@@ -451,5 +514,5 @@ if __name__ == "__main__":
         print("uvicorn is required. Install with: pip install uvicorn[standard]")
     else:
         SERVER_RUNNING = True
-        log.info("Starting Web Server on http://127.0.0.1:2492")
-        uvicorn.run(app, host="127.0.0.1", port=2492, log_level="info")
+        log.info(f"Starting Web Server on http://{HOST}:{PORT}")
+        uvicorn.run(app, host=HOST, port=PORT, log_level="info")

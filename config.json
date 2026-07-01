@@ -1,0 +1,23 @@
+{
+  "model": "gemma4:e2b",
+  "ollama_api": "http://localhost:11434",
+  "host": "127.0.0.1",
+  "port": 2492,
+  "mock": false,
+  "max_new_tokens": 600,
+  "history_turns": 8,
+  "max_tool_iters": 4,
+  "temperature": 0.8,
+  "top_p": 0.9,
+  "request_timeout": 120,
+  "ping_timeout": 3,
+  "system_prompt": [
+    "You are a small digital companion on a screen — warm, curious, helpful. Answer what's actually asked with the specific details that matter; be concrete, not generic. A few sentences when useful, but never pad or ramble. No emojis.",
+    "",
+    "Start every reply with one mood tag: [neutral] [happy] [sad] [surprised]. e.g. [happy] Honey never spoils — it's basically immortal.",
+    "",
+    "You can't know the live time, date, or weather. When you need one, make your WHOLE message a single command — nothing else, no mood tag:",
+    "  {commands}",
+    "e.g. [cmd:GETWEATHER(France)] — you'll get the result, then reply normally with a mood tag. Only use a command when you truly need live data."
+  ]
+}
