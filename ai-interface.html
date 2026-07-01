@@ -459,48 +459,83 @@ function onSl(t,v){
 }
 
 /* ── STT ────────────────────────────────────────── */
-let recog=null, micOn=false;
+let recog=null, micOn=false, restartTimer=null;
+let sttSessionStart=0, sttFastFails=0;
+
 function initRecog(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR) return false;
   recog=new SR();
   recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onstart=()=>{ resetIdleTimer(); setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
+
+  recog.onstart=()=>{
+    if(!micOn) return;            // ignore a stray start that fires after we stopped
+    console.log('[stt] start');
+    sttSessionStart=Date.now();
+    resetIdleTimer(); setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING');
+  };
+
   recog.onresult=e=>{
     resetIdleTimer();
+    sttFastFails=0;                      // getting data → not a dead loop
     let interim='',final='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
       if(e.results[i].isFinal) final+=t; else interim+=t;
     }
+    console.log('[stt] result', {interim, final});
     showSpeech('listening', final||interim);
     if(final.trim()){ clearThoughts(); sendToWs({type:'text',content:final.trim()}); }
   };
-  // Only truly fatal errors should stop listening. 'aborted', 'no-speech' and
-  // 'network' fire routinely during continuous recognition (especially right
-  // after a restart) — ignore them and let onend restart the session.
+
   recog.onerror=e=>{
+    console.warn('[stt] error:', e.error);
     if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){
-      showSpeech('listening','microphone blocked — check browser permissions');
       stopMic();
+      showSpeech('listening','microphone blocked — allow it in your browser');
+      setTimeout(hideSpeech, 2800);
     }
+    // transient (aborted / network / no-speech): let onend decide about restart
   };
-  // The engine ends sessions constantly (silence, a final result, timeouts).
-  // While the user still wants to listen, restart — but after a short delay, so
-  // the restart itself doesn't race and throw 'aborted'.
+
   recog.onend=()=>{
     if(!micOn) return;
-    setTimeout(()=>{ if(micOn){ try{ recog.start(); }catch(_){} } }, 150);
+    const lasted=Date.now()-sttSessionStart;
+    console.log('[stt] end after', lasted+'ms');
+    // A session that dies in well under a second — repeatedly — means recognition
+    // can't actually run here (network to the speech backend, or an unsupported
+    // browser context). Stop spinning the mic and say so, rather than flickering.
+    if(lasted < 900){
+      sttFastFails++;
+      if(sttFastFails >= 5){
+        console.warn('[stt] giving up: recognition keeps dying instantly (see errors above)');
+        stopMic();
+        showSpeech('listening','voice recognition isn\u2019t working here — try Chrome directly, or check network');
+        setTimeout(hideSpeech, 2800);
+        return;
+      }
+    } else {
+      sttFastFails=0;                    // a real listening session ran; reset
+    }
+    clearTimeout(restartTimer);
+    restartTimer=setTimeout(()=>{
+      if(micOn){ try{ recog.start(); }catch(err){ console.warn('[stt] restart threw:', err.message); } }
+    }, 400);
   };
+
   return true;
 }
 function toggleMic(){ micOn?stopMic():startMic(); }
 function startMic(){
   if(!recog && !initRecog()){ showSpeech('listening','voice input isn\u2019t supported in this browser'); setTimeout(hideSpeech,1800); return; }
-  micOn=true;
+  micOn=true; sttFastFails=0;
   try{ recog.start(); }catch(_){}   // already-started throws harmlessly; onstart already fired
 }
-function stopMic(){ micOn=false; try{ recog&&recog.stop(); }catch(_){} setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity(); }
+function stopMic(){
+  micOn=false; clearTimeout(restartTimer);
+  try{ recog&&recog.stop(); }catch(_){}
+  setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity();
+}
 function setMicUI(on){ document.getElementById('micBtn').classList.toggle('on',on); document.getElementById('inputBar').classList.toggle('recording',on); }
 
 /* ── TEXT INPUT ─────────────────────────────────── */
