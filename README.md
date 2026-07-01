@@ -8,10 +8,10 @@ A locally-hosted AI companion that runs entirely on a Raspberry Pi 5. Chat with 
 
 - Python 3.10+
 - [Ollama](https://ollama.ai) installed and running
-- A pulled model (default: `qwen3.5:2b`)
+- A pulled model (default: `gemma4:e2b`)
 
 ```bash
-ollama pull qwen3.5:2b
+ollama pull gemma4:e2b
 ```
 
 ## Setup
