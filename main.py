@@ -15,10 +15,12 @@ To Run:
 Then open http://localhost:2492 in your browser.
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
+import time
 import requests
 from pathlib import Path
 from typing import Dict, List
@@ -79,7 +81,20 @@ SERVER_RUNNING = False
 # AI Pet Controller
 # ──────────────────────────────────────────────────────────────────────────
 
+class _ThinkingUnsupported(Exception):
+    """Raised when Ollama rejects the `think` flag for the current model.
+
+    We treat this as recoverable: disable thinking for the rest of the run
+    and retry the same request without it, so chat keeps working even on
+    models that have no thinking mode.
+    """
+
+
 class AIPet:
+    # Flipped to False the first time a model rejects the `think` flag, so we
+    # stop asking for thinking output we can't get. Class-level = shared/persistent.
+    thinking_supported: bool = True
+
     def __init__(self, mock: bool = False):
         self.mock = mock
         self._reset_memory()
@@ -97,8 +112,13 @@ class AIPet:
 
     # ── Low-level: single Ollama call ──────────────────────────────────────
 
-    def _generate(self, messages: List[Dict]) -> str:
-        """Call Ollama with the given message list and return raw text.
+    def _generate(self, messages: List[Dict], emit=None) -> str:
+        """Call Ollama and return the assistant's reply text (content only).
+
+        Streams the response so that any `thinking` tokens can be forwarded
+        live via `emit({"type": "thinking", "content": <delta>})` — that's what
+        drives the thought bar in the UI. Thinking is display-only; the value
+        returned here is always the model's actual reply (content channel).
 
         Does a fast pre-ping first so we fail in ~3 seconds if Ollama is down,
         rather than hanging for the full inference timeout.
@@ -111,21 +131,36 @@ class AIPet:
         except requests.exceptions.Timeout:
             raise RuntimeError("Ollama is not responding — it may have crashed")
 
-        # Actual inference — generous timeout since local models can be slow.
+        # Ask for thinking only if we haven't already learned this model can't.
+        want_think = AIPet.thinking_supported
+        try:
+            return self._stream_chat(messages, want_think, emit)
+        except _ThinkingUnsupported as e:
+            AIPet.thinking_supported = False
+            log.warning(f"Model rejected thinking ({str(e)[:80]}); retrying without it")
+            return self._stream_chat(messages, False, emit)
+
+    def _stream_chat(self, messages: List[Dict], think: bool, emit) -> str:
+        """One streaming /api/chat call. Returns the accumulated content text.
+
+        Raises _ThinkingUnsupported if `think` was requested but the model
+        does not support it (so the caller can retry without thinking).
+        """
         try:
             resp = requests.post(
                 f"{OLLAMA_API}/api/chat",
                 json={
                     "model":    MODEL_NAME,
                     "messages": messages,
-                    "stream":   False,
-                    "think":    False,
+                    "stream":   True,
+                    "think":    think,
                     "options": {
                         "temperature": 0.8,
                         "top_p":       0.9,
                         "num_predict": MAX_NEW_TOKENS,
                     },
                 },
+                stream=True,
                 timeout=120,
             )
         except requests.exceptions.ConnectionError:
@@ -133,23 +168,55 @@ class AIPet:
         except requests.exceptions.Timeout:
             raise RuntimeError("Ollama took too long — model may be overloaded")
 
+        # Non-200 arrives before the body stream; inspect it, then decide.
         if resp.status_code != 200:
-            raise RuntimeError(f"Ollama API error {resp.status_code}: {resp.text[:120]}")
+            body = resp.text[:200]
+            resp.close()
+            if think and "think" in body.lower():
+                raise _ThinkingUnsupported(body)
+            raise RuntimeError(f"Ollama API error {resp.status_code}: {body[:120]}")
 
-        data    = resp.json()
-        message = data.get("message", {})
-        raw     = (message.get("content") or "").strip()
+        content_parts: List[str] = []
+        thinking_parts: List[str] = []
+        try:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                msg = obj.get("message", {})
+
+                tchunk = msg.get("thinking")
+                if tchunk:
+                    thinking_parts.append(tchunk)
+                    if emit:
+                        emit({"type": "thinking", "content": tchunk})
+
+                cchunk = msg.get("content")
+                if cchunk:
+                    content_parts.append(cchunk)
+
+                if obj.get("done"):
+                    break
+        finally:
+            resp.close()
+
+        raw = "".join(content_parts).strip()
+        # Last-resort fallback: some models emit their whole answer in the
+        # thinking channel and leave content empty.
+        if not raw and thinking_parts:
+            raw = "".join(thinking_parts).strip()
+            log.info("No content channel; using thinking text as the reply")
         if not raw:
-            raw = (message.get("thinking") or "").strip()
-            if raw:
-                log.info("Ollama returned thinking output as content fallback")
-            else:
-                log.warning("Ollama response contained no content")
+            log.warning("Ollama response contained no content")
         return raw
 
     # ── Agent loop ─────────────────────────────────────────────────────────
 
-    def _run_agent(self, working: List[Dict]) -> str:
+    def _run_agent(self, working: List[Dict], emit=None) -> str:
         """
         Run the tool-use loop against a working copy of the conversation.
 
@@ -157,12 +224,14 @@ class AIPet:
         [cmd:NAME(arg)] to execute a command. Results are fed back as system
         messages in the ephemeral working copy. Only the final reply is returned.
 
+        `emit`, if given, forwards live thinking tokens to the UI.
+
         working is mutated in-place (tool turns are appended here but never
         saved to self.history — the caller decides what to persist).
         """
         raw = ""
         for iteration in range(MAX_TOOL_ITERS):
-            raw = self._generate(working)
+            raw = self._generate(working, emit=emit)
             stripped = raw.strip()
             log.debug(f"[agent iter {iteration}] raw: {stripped[:120]}")
 
@@ -199,8 +268,12 @@ class AIPet:
 
     # ── Public entry point ─────────────────────────────────────────────────
 
-    def get_response(self, user_text: str) -> dict:
-        """Process user input and return a dict with content and expression."""
+    def get_response(self, user_text: str, emit=None) -> dict:
+        """Process user input and return a dict with content and expression.
+
+        `emit`, if given, is a thread-safe callback the agent uses to push
+        live thinking tokens to the UI as {"type": "thinking", "content": ...}.
+        """
 
         # Slash commands
         if user_text.lower() == "/clear":
@@ -212,15 +285,21 @@ class AIPet:
         if len(self.history) > 1 + HISTORY_TURNS * 2:
             self.history = [self.history[0]] + self.history[-(HISTORY_TURNS * 2):]
 
-        # Mock shortcut
+        # Mock shortcut — emit a few fake thoughts so the thought bar can be
+        # exercised without a running model.
         if self.mock:
+            for thought in ("reading the message… ", "considering a warm reply… ",
+                            "picking a mood… "):
+                if emit:
+                    emit({"type": "thinking", "content": thought})
+                time.sleep(0.4)
             raw = "[happy] I am just a mock bot right now!"
         else:
             try:
                 # Working copy: persistent history + ephemeral tool turns.
                 # Tool turns are NOT saved to self.history.
                 working = list(self.history)
-                raw = self._run_agent(working)
+                raw = self._run_agent(working, emit=emit)
             except requests.ConnectionError:
                 return {
                     "content":    "Ollama is not running. Start it with: ollama serve",
@@ -305,10 +384,17 @@ async def ws_endpoint(websocket: WebSocket):
                 log.info(f"[ws] ← User: {content[:80]}")
                 await send({"type": "expression", "expression": "thinking"})
 
+                loop = asyncio.get_running_loop()
+
+                # The model runs in a worker thread but needs to push live
+                # thinking tokens back to the client. run_coroutine_threadsafe
+                # is the correct bridge from a thread onto the event loop.
+                def emit(data: dict):
+                    asyncio.run_coroutine_threadsafe(send(data), loop)
+
                 try:
-                    import asyncio
-                    result = await asyncio.get_event_loop().run_in_executor(
-                        None, pet.get_response, content
+                    result = await loop.run_in_executor(
+                        None, lambda: pet.get_response(content, emit)
                     )
                     await send({"type": "response", **result})
                     log.info(f"[ws] → AI [{result['expression']}]: {result['content'][:80]}")

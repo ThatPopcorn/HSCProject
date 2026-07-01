@@ -3,381 +3,277 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI</title>
+<title>companion</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg:       #EBF1F5;
-  --bg1:      #FFFFFF;
-  --bg2:      #F4F8FC;
-  --b0:       rgba(147,165,207,0.22);
-  --b1:       rgba(147,165,207,0.38);
-  --text:     #6B7FA0;
-  --texthi:   #2C3A58;
-  --dim:      #A8B9D3;
-  --teal:     #93A5CF;
-  --tealg:    rgba(147,165,207,0.13);
-  --blue:     #7BA5D8;
-  --red:      #D97070;
-  --redg:     rgba(217,112,112,0.10);
-  --green:    #5BBB88;
-  --amber:    #C8973A;
-  --off:      #D6E4EE;
-  --on:       #93A5CF;
-  --cs:       20px;
-  --cg:       2px;
+:root{
+  --panel:      #FFFFFF;
+  --panel2:     #F5F8FC;
+  --ink:        #2B3A57;
+  --muted:      #8496BE;
+  --faint:      #AEBBD6;
+  --line:       rgba(130,150,190,0.20);
+  --line2:      rgba(130,150,190,0.34);
+  --accent:     #7C93D4;
+  --accentsoft: rgba(124,147,212,0.14);
+  --ok:         #57B98A;
+  --warn:       #C89A46;
+  --err:        #D77E7E;
+  --cell-off:   #DEE7F1;
+  --cell-on:    #7C93D4;
+  --cs:         12px;   /* face cell size — shrink/grow to resize the whole face */
+  --cg:         2px;    /* face cell gap */
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
 body{
-  background: linear-gradient(145deg, #E4EFE9 0%, #ECF0F8 45%, #EBF0F9 100%);
-  background-attachment:fixed;
-  color:var(--text);
+  background:
+    radial-gradient(120% 90% at 50% -10%, #EEF3FA 0%, #E6EDF7 55%, #E3E9F5 100%);
+  color:var(--muted);
   font-family:'IBM Plex Mono',monospace;
   font-size:11px;
-  display:flex;
-  flex-direction:column;
+  display:flex;flex-direction:column;
+  -webkit-font-smoothing:antialiased;
 }
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 
-/* ── HEADER ───────────────────────────────────── */
+/* ── HEADER ─────────────────────────────────────── */
 header{
-  height:40px;
-  background:rgba(255,255,255,0.82);
-  backdrop-filter:blur(10px);
-  -webkit-backdrop-filter:blur(10px);
-  border-bottom:1px solid var(--b0);
-  box-shadow:0 1px 8px rgba(147,165,207,0.10);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 16px;
-  flex-shrink:0;
-  position:relative;
-  z-index:50;
+  height:38px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;
+  border-bottom:1px solid var(--line);
+  background:rgba(255,255,255,0.55);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  position:relative;z-index:50;
 }
-.logo{
-  font-size:11px;
-  font-weight:500;
-  letter-spacing:.22em;
-  text-transform:uppercase;
-  color:var(--texthi);
+.brand{
   display:flex;align-items:center;gap:8px;
+  font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--ink);
 }
-.logo-dot{
-  width:6px;height:6px;border-radius:50%;
-  background:var(--teal);
-  box-shadow:0 0 8px rgba(147,165,207,0.7);
-  animation:glow 2.6s ease-in-out infinite;
+.brand-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 3px var(--accentsoft);
+  animation:pulse 2.8s ease-in-out infinite;
 }
-@keyframes glow{0%,100%{opacity:1;box-shadow:0 0 8px rgba(147,165,207,0.7)}50%{opacity:.4;box-shadow:0 0 3px rgba(147,165,207,0.4)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.hright{display:flex;align-items:center;gap:12px}
+.chip{display:flex;align-items:center;gap:6px;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.conn-pip{width:5px;height:5px;border-radius:50%;background:var(--faint);transition:background .3s,box-shadow .3s}
+.conn-pip.ok {background:var(--ok); box-shadow:0 0 6px rgba(87,185,138,.55)}
+.conn-pip.act{background:var(--accent);box-shadow:0 0 6px rgba(124,147,212,.6)}
+.conn-pip.err{background:var(--err); box-shadow:0 0 6px rgba(215,126,126,.55)}
+.cog{background:none;border:none;color:var(--faint);cursor:pointer;font-size:14px;line-height:1;padding:4px;transition:color .15s}
+.cog:hover{color:var(--ink)}
 
-.hright{display:flex;align-items:center;gap:10px}
-.conn-chip{
-  display:flex;align-items:center;gap:6px;
-  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--dim);
-}
-.conn-pip{
-  width:5px;height:5px;border-radius:50%;
-  background:var(--dim);
-  transition:background .3s,box-shadow .3s;
-}
-.conn-pip.ok  {background:var(--green);box-shadow:0 0 5px rgba(91,187,136,0.6)}
-.conn-pip.err {background:var(--red);  box-shadow:0 0 5px rgba(217,112,112,0.6)}
-.conn-pip.act {background:var(--teal); box-shadow:0 0 5px rgba(147,165,207,0.7)}
-
-.btn-cog{
-  background:none;border:none;color:var(--dim);
-  cursor:pointer;font-size:14px;line-height:1;
-  padding:4px;transition:color .15s;
-}
-.btn-cog:hover{color:var(--texthi)}
-
-/* ── SETTINGS PANEL ───────────────────────────── */
+/* ── SETTINGS ───────────────────────────────────── */
 .settings{
-  position:fixed;top:40px;right:0;
-  width:240px;
-  background:rgba(255,255,255,0.96);
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
-  border-left:1px solid var(--b0);
-  border-bottom:1px solid var(--b0);
-  border-bottom-left-radius:10px;
-  box-shadow:-4px 4px 20px rgba(147,165,207,0.15);
-  padding:16px 14px;
-  z-index:40;
-  display:none;
-  flex-direction:column;
-  gap:14px;
+  position:fixed;top:38px;right:0;width:236px;
+  background:rgba(255,255,255,0.97);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-left:1px solid var(--line);border-bottom:1px solid var(--line);
+  border-bottom-left-radius:12px;
+  box-shadow:-6px 8px 28px rgba(90,110,160,.14);
+  padding:15px 14px;z-index:40;display:none;flex-direction:column;gap:13px;
 }
 .settings.open{display:flex}
-
-.sp-title{
-  font-size:8.5px;font-weight:500;
-  letter-spacing:.2em;text-transform:uppercase;
-  color:var(--dim);padding-bottom:10px;
-  border-bottom:1px solid var(--b0);
-}
+.sp-title{font-size:8px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);padding-bottom:9px;border-bottom:1px solid var(--line)}
 .sp-row{display:flex;flex-direction:column;gap:5px}
-.sp-lbl{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.sp-field{
-  background:var(--bg);border:1px solid var(--b0);
-  border-radius:5px;
-  color:var(--texthi);font-family:inherit;font-size:10px;
-  padding:6px 8px;outline:none;width:100%;
+.sp-lbl{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.sp-field,.sp-select{
+  background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);font-family:inherit;font-size:10px;padding:6px 8px;outline:none;width:100%;
   transition:border-color .15s,box-shadow .15s;
 }
-.sp-field:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(147,165,207,0.15)}
-.sp-select{
-  background:var(--bg);border:1px solid var(--b0);
-  border-radius:5px;
-  color:var(--text);font-family:inherit;font-size:10px;
-  padding:6px 8px;outline:none;width:100%;
-  -webkit-appearance:none;
-  appearance:none;
-  cursor:pointer;
-}
+.sp-select{color:var(--muted);-webkit-appearance:none;appearance:none;cursor:pointer}
+.sp-field:focus,.sp-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
 .slider-row{display:flex;align-items:center;gap:8px}
-.sl-l{font-size:8.5px;color:var(--dim);width:40px;letter-spacing:.08em;text-transform:uppercase}
-.sl-v{font-size:9px;color:var(--teal);width:28px;text-align:right;flex-shrink:0}
-input[type=range]{
-  flex:1;height:2px;-webkit-appearance:none;
-  appearance:none;
-  background:var(--b1);border-radius:2px;outline:none;cursor:pointer;
-}
-input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:10px;height:10px;border-radius:50%;
-  appearance:none;
-  background:var(--teal);cursor:pointer;
-  box-shadow:0 0 0 2px rgba(255,255,255,0.9),0 0 0 3px rgba(147,165,207,0.4);
-}
-
-.sp-btn{
-  padding:7px 10px;background:none;border:1px solid var(--b1);
-  border-radius:5px;
-  color:var(--text);font-family:inherit;font-size:9px;
-  letter-spacing:.12em;text-transform:uppercase;cursor:pointer;
-  transition:all .15s;text-align:center;
-}
-.sp-btn:hover{border-color:var(--teal);color:var(--teal);background:var(--tealg)}
-.sp-btn.active{background:var(--tealg);border-color:var(--teal);color:var(--teal)}
-.sp-btn.danger{border-color:var(--red);color:var(--red)}
-.sp-btn.danger:hover{background:rgba(217,112,112,0.08)}
-
-/* expression grid */
+.sl-l{font-size:8px;color:var(--faint);width:36px;letter-spacing:.08em;text-transform:uppercase}
+.sl-v{font-size:9px;color:var(--accent);width:28px;text-align:right;flex-shrink:0}
+input[type=range]{flex:1;height:2px;-webkit-appearance:none;appearance:none;background:var(--line2);border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 0 2px #fff,0 0 0 3px var(--accentsoft)}
+.sp-btn{padding:7px 10px;background:none;border:1px solid var(--line2);border-radius:6px;color:var(--muted);font-family:inherit;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;transition:all .15s;text-align:center}
+.sp-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accentsoft)}
+.sp-btn.active{background:var(--accentsoft);border-color:var(--accent);color:var(--accent)}
+.sp-btn.danger{border-color:var(--err);color:var(--err)}
+.sp-btn.danger:hover{background:rgba(215,126,126,.08)}
 .expr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-.expr-btn{
-  padding:5px 2px;background:none;border:1px solid var(--b0);
-  border-radius:4px;
-  color:var(--dim);font-family:inherit;font-size:8px;
-  letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
-  transition:all .1s;text-align:center;
-}
-.expr-btn:hover{border-color:var(--b1);color:var(--text);background:rgba(147,165,207,0.06)}
-.expr-btn.active{background:var(--tealg);border-color:var(--teal);color:var(--teal)}
+.expr-btn{padding:5px 2px;background:none;border:1px solid var(--line);border-radius:5px;color:var(--faint);font-family:inherit;font-size:7.5px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;transition:all .1s;text-align:center}
+.expr-btn:hover{border-color:var(--line2);color:var(--muted);background:var(--accentsoft)}
+.expr-btn.active{background:var(--accentsoft);border-color:var(--accent);color:var(--accent)}
 
-/* ── MAIN CONTENT ─────────────────────────────── */
-main{
-  flex:1;min-height:0;overflow:hidden;
-  display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  gap:14px;padding:20px 16px 10px;
+/* ── MAIN / DEVICE ──────────────────────────────── */
+main{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:18px 16px 10px}
+.device{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:0 18px 44px -18px rgba(70,95,155,.32),0 2px 8px rgba(90,110,160,.06);
+  padding:16px 16px 14px;
+  display:flex;flex-direction:column;align-items:center;gap:12px;
 }
 
-/* ── FACE ─────────────────────────────────────── */
-.face-label{
-  font-size:8px;font-weight:500;
-  letter-spacing:.38em;text-transform:uppercase;
-  color:var(--dim);height:12px;
-  transition:color .3s;
-}
-.face-label.lit{color:var(--teal)}
+/* face label */
+.face-label{font-size:8px;font-weight:600;letter-spacing:.42em;text-transform:uppercase;color:var(--faint);height:11px;transition:color .3s}
+.face-label.lit{color:var(--accent)}
 
+/* stage = face + thought stream side by side */
+.stage{display:flex;align-items:stretch;gap:12px}
+
+/* face */
 .face-frame{position:relative;padding:2px}
-.face-frame::before,.face-frame::after,
-.face-frame .ca-bl,.face-frame .ca-br{
-  content:'';position:absolute;
-  width:12px;height:12px;
-  border-color:var(--teal);border-style:solid;
-  opacity:.55;transition:opacity .3s;
+.face-frame::before,.face-frame::after,.face-frame .ca-bl,.face-frame .ca-br{
+  content:'';position:absolute;width:11px;height:11px;border-color:var(--accent);border-style:solid;opacity:.5;transition:opacity .3s;
 }
 .face-frame::before{top:0;left:0;border-width:2px 0 0 2px}
-.face-frame::after {top:0;right:0;border-width:2px 2px 0 0}
-.face-frame .ca-bl {bottom:0;left:0;border-width:0 0 2px 2px}
-.face-frame .ca-br {bottom:0;right:0;border-width:0 2px 2px 0}
-.face-frame.lit::before,.face-frame.lit::after,
-.face-frame.lit .ca-bl,.face-frame.lit .ca-br{opacity:1}
-
+.face-frame::after{top:0;right:0;border-width:2px 2px 0 0}
+.face-frame .ca-bl{bottom:0;left:0;border-width:0 0 2px 2px}
+.face-frame .ca-br{bottom:0;right:0;border-width:0 2px 2px 0}
+.face-frame.lit::before,.face-frame.lit::after,.face-frame.lit .ca-bl,.face-frame.lit .ca-br{opacity:1}
 .face-grid{
-  display:grid;
-  grid-template-columns:repeat(16,var(--cs));
-  grid-template-rows:repeat(16,var(--cs));
-  gap:var(--cg);
-  background:var(--bg1);
-  border:1px solid var(--b0);
-  box-shadow:0 4px 24px rgba(147,165,207,0.16),0 1px 4px rgba(147,165,207,0.10);
-  padding:8px;
-  position:relative;
+  display:grid;grid-template-columns:repeat(16,var(--cs));grid-template-rows:repeat(16,var(--cs));gap:var(--cg);
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  box-shadow:inset 0 1px 3px rgba(90,110,160,.10);
+  padding:7px;position:relative;
 }
-.face-grid::after{
-  content:'';position:absolute;inset:0;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(147,165,207,.03) 2px,rgba(147,165,207,.03) 4px);
-  pointer-events:none;z-index:1;
-}
-.cell{
-  width:var(--cs);height:var(--cs);
-  background:var(--off);
-  border:1px solid rgba(147,165,207,0.12);
-  transition:background .05s,box-shadow .05s;
-}
-.cell.on{
-  background:var(--on);
-  border-color:rgba(147,165,207,0.5);
-  box-shadow:0 0 5px rgba(147,165,207,0.35);
-}
+.face-grid::after{content:'';position:absolute;inset:0;border-radius:8px;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(124,147,212,.03) 2px,rgba(124,147,212,.03) 4px);pointer-events:none;z-index:1}
+.cell{width:var(--cs);height:var(--cs);background:var(--cell-off);border-radius:2px;transition:background .06s,box-shadow .06s}
+.cell.on{background:var(--cell-on);box-shadow:0 0 5px rgba(124,147,212,.4)}
 
-/* ── INPUT BAR ────────────────────────────────── */
+/* ── THOUGHT STREAM (signature) ─────────────────── */
+.thoughts{
+  width:96px;display:flex;flex-direction:column;gap:5px;
+  padding-left:11px;border-left:1px solid var(--line);
+  opacity:.34;transition:opacity .4s;
+}
+.thoughts.active{opacity:.8}
+.thoughts.done{opacity:.28}
+.th-cap{
+  display:flex;align-items:center;gap:5px;
+  font-size:7px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);flex-shrink:0;
+}
+.th-cap i{width:4px;height:4px;border-radius:50%;background:var(--faint);display:inline-block}
+.thoughts.active .th-cap{color:var(--accent)}
+.thoughts.active .th-cap i{background:var(--accent);box-shadow:0 0 5px rgba(124,147,212,.6);animation:pulse 1.1s ease-in-out infinite}
+.th-stream{
+  flex:1;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  font-size:8.5px;line-height:1.55;font-weight:300;color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22%,#000 84%,transparent 100%);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 22%,#000 84%,transparent 100%);
+}
+.th-stream:empty::before{content:'idle';color:var(--faint);opacity:.6;font-style:italic}
+
+/* ── INPUT ──────────────────────────────────────── */
 .input-bar{
   display:flex;align-items:center;
-  background:rgba(255,255,255,0.9);
-  border:1px solid var(--b0);
-  border-radius:8px;
-  box-shadow:0 2px 12px rgba(147,165,207,0.13);
-  width:340px;
-  transition:border-color .15s,box-shadow .15s;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  width:100%;transition:border-color .15s,box-shadow .15s;
 }
-.input-bar:focus-within{border-color:var(--teal);box-shadow:0 2px 16px rgba(147,165,207,0.25)}
-.input-bar.recording{border-color:var(--red);box-shadow:0 2px 12px rgba(217,112,112,0.15)}
-
-.ib-mic,.ib-send{
-  flex-shrink:0;
-  width:40px;height:40px;
-  background:none;border:none;
-  color:var(--dim);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:color .15s;
-}
-.ib-mic:hover {color:var(--texthi)}
-.ib-mic.on    {color:var(--red);animation:mic-p 1s ease-in-out infinite}
-.ib-send:hover{color:var(--teal)}
-@keyframes mic-p{0%,100%{opacity:1}50%{opacity:.35}}
-
+.input-bar:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
+.input-bar.recording{border-color:var(--err);box-shadow:0 0 0 3px rgba(215,126,126,.12)}
+.ib-mic,.ib-send{flex-shrink:0;width:38px;height:38px;background:none;border:none;color:var(--faint);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s}
+.ib-mic:hover{color:var(--ink)}
+.ib-mic.on{color:var(--err);animation:pulse 1s ease-in-out infinite}
+.ib-send:hover{color:var(--accent)}
 .ib-mic svg,.ib-send svg{width:14px;height:14px;fill:currentColor}
+.ib-text{flex:1;background:none;border:none;color:var(--ink);font-family:inherit;font-size:11px;padding:0 4px;outline:none;height:38px;caret-color:var(--accent)}
+.ib-text::placeholder{color:var(--faint)}
 
-.ib-text{
-  flex:1;background:none;border:none;
-  color:var(--texthi);font-family:inherit;font-size:11px;
-  padding:0 4px;outline:none;height:40px;
-  caret-color:var(--teal);
-}
-.ib-text::placeholder{color:var(--dim)}
+/* ── CONN STATUS ────────────────────────────────── */
+.conn-status{display:flex;align-items:center;gap:7px;font-size:8.5px;color:var(--faint);letter-spacing:.05em}
+.cs-dot{width:4px;height:4px;border-radius:50%;background:var(--faint);flex-shrink:0;transition:all .3s}
+.cs-dot.ok {background:var(--ok); box-shadow:0 0 5px rgba(87,185,138,.55)}
+.cs-dot.err{background:var(--err);box-shadow:0 0 5px rgba(215,126,126,.55)}
 
-/* ── CONN STATUS ──────────────────────────────── */
-.conn-status{
-  display:flex;align-items:center;gap:7px;
-  font-size:9px;color:var(--dim);letter-spacing:.06em;
-}
-.cs-dot{width:4px;height:4px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .3s}
-.cs-dot.ok  {background:var(--green);box-shadow:0 0 4px rgba(91,187,136,0.6)}
-.cs-dot.err {background:var(--red);  box-shadow:0 0 4px rgba(217,112,112,0.6)}
-
-/* ── SPEECH BAR ───────────────────────────────── */
+/* ── SPEECH BAR ─────────────────────────────────── */
 .speech-bar{
-  height:44px;
-  background:rgba(255,255,255,0.88);
-  backdrop-filter:blur(8px);
-  -webkit-backdrop-filter:blur(8px);
-  border-top:1px solid var(--b0);
-  display:flex;align-items:center;gap:12px;
-  padding:0 16px;flex-shrink:0;overflow:hidden;
+  height:42px;flex-shrink:0;overflow:hidden;
+  display:flex;align-items:center;gap:12px;padding:0 16px;
+  background:rgba(255,255,255,0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-top:1px solid var(--line);
   transition:height .2s,opacity .2s;position:relative;z-index:5;
 }
-.speech-bar.hidden{height:0;min-height:0;opacity:0;border-top-width:0;pointer-events:none;padding:0;margin:0}
-.sp-badge{
-  font-size:8.5px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;
-  padding:3px 7px;border:1px solid;border-radius:3px;white-space:nowrap;flex-shrink:0;
-}
-.sp-badge.listening{color:var(--red);border-color:var(--red);animation:badge-b .9s ease-in-out infinite}
-.sp-badge.speaking {color:var(--blue);border-color:var(--blue)}
-@keyframes badge-b{0%,100%{opacity:1}50%{opacity:.3}}
-.sp-text{
-  flex:1;overflow:hidden;font-size:11px;color:var(--texthi);
-  white-space:nowrap;text-overflow:ellipsis;font-weight:300;font-style:italic;
-  position:relative;
-}
-.sp-text::after{
-  content:'';position:absolute;top:0;right:0;bottom:0;width:50px;
-  background:linear-gradient(to right,transparent,rgba(255,255,255,0.88));pointer-events:none;
-}
+.speech-bar.hidden{height:0;opacity:0;border-top-width:0;pointer-events:none;padding:0}
+.sp-badge{font-size:8px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;padding:3px 7px;border:1px solid;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.sp-badge.listening{color:var(--err);border-color:var(--err);animation:pulse .9s ease-in-out infinite}
+.sp-badge.speaking{color:var(--accent);border-color:var(--accent)}
+.sp-text{flex:1;overflow:hidden;font-size:11px;color:var(--ink);white-space:nowrap;text-overflow:ellipsis;font-weight:300;font-style:italic}
 .word{display:inline}
-.word.spoken {color:var(--dim)}
-.word.current{color:var(--teal);text-shadow:0 0 8px rgba(147,165,207,0.5)}
+.word.spoken{color:var(--faint)}
+.word.current{color:var(--accent);text-shadow:0 0 8px rgba(124,147,212,.5)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important}
+}
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
 <header>
-  <div class="logo"><div class="logo-dot"></div>AI Interface</div>
+  <div class="brand"><span class="brand-dot"></span>companion</div>
   <div class="hright">
-    <div class="conn-chip"><div class="conn-pip" id="hPip"></div><span id="hLbl">OFFLINE</span></div>
-    <button class="btn-cog" onclick="toggleSettings()" title="Settings">⚙</button>
+    <div class="chip"><span class="conn-pip" id="hPip"></span><span id="hLbl">OFFLINE</span></div>
+    <button class="cog" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙</button>
   </div>
 </header>
 
-<!-- SETTINGS PANEL -->
 <div class="settings" id="settings">
   <div class="sp-title">Settings</div>
-
   <div class="sp-row">
-    <div class="sp-lbl">WebSocket URL</div>
+    <div class="sp-lbl">WebSocket</div>
     <input class="sp-field" id="wsUrl" value="" spellcheck="false">
   </div>
   <button class="sp-btn" id="btnConn" onclick="toggleConnect()">Connect</button>
-
   <div class="sp-row">
     <div class="sp-lbl">Voice</div>
     <select class="sp-select" id="voiceSelect"></select>
   </div>
-
   <div class="sp-row">
-    <div class="sp-lbl">TTS</div>
+    <div class="sp-lbl">Speech</div>
     <div class="slider-row"><span class="sl-l">Rate</span><input type="range" id="slRate" min=".5" max="2" step=".1" value="1" oninput="onSl('rate',this.value)"><span class="sl-v" id="vRate">1.0</span></div>
     <div class="slider-row"><span class="sl-l">Pitch</span><input type="range" id="slPitch" min=".5" max="2" step=".1" value="1" oninput="onSl('pitch',this.value)"><span class="sl-v" id="vPitch">1.0</span></div>
     <div class="slider-row"><span class="sl-l">Vol</span><input type="range" id="slVol" min="0" max="1" step=".05" value=".85" oninput="onSl('vol',this.value)"><span class="sl-v" id="vVol">0.85</span></div>
   </div>
-
   <div class="sp-row">
     <div class="sp-lbl">Expression</div>
     <div class="expr-grid" id="exprGrid"></div>
   </div>
 </div>
 
-<!-- MAIN -->
 <main>
-  <div class="face-label" id="faceLabel">NEUTRAL</div>
-  <div class="face-frame" id="faceFrame">
-    <div class="ca-bl"></div><div class="ca-br"></div>
-    <div class="face-grid" id="faceGrid"></div>
-  </div>
-  <div class="input-bar" id="inputBar">
-    <button type="button" class="ib-mic" id="micBtn" onclick="toggleMic()" title="Toggle voice input">
-      <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 16.93A7 7 0 0 1 5 11H3a9 9 0 0 0 8 8.94V22h-2v2h6v-2h-2z"/></svg>
-    </button>
-    <input class="ib-text" id="txtInput" placeholder="Type a message or use mic…">
-    <button type="button" class="ib-send" onclick="sendText()" title="Send">
-      <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
-    </button>
-  </div>
-  <div class="conn-status">
-    <div class="cs-dot" id="csDot"></div>
-    <span id="csLbl">not connected — open ⚙ to configure</span>
+  <div class="device">
+    <div class="face-label" id="faceLabel">NEUTRAL</div>
+    <div class="stage">
+      <div class="face-frame" id="faceFrame">
+        <div class="ca-bl"></div><div class="ca-br"></div>
+        <div class="face-grid" id="faceGrid"></div>
+      </div>
+      <aside class="thoughts" id="thoughts">
+        <div class="th-cap"><i></i>thinking</div>
+        <div class="th-stream" id="thoughtStream"></div>
+      </aside>
+    </div>
+    <div class="input-bar" id="inputBar">
+      <button type="button" class="ib-mic" id="micBtn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">
+        <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 16.93A7 7 0 0 1 5 11H3a9 9 0 0 0 8 8.94V22h-2v2h6v-2h-2z"/></svg>
+      </button>
+      <input class="ib-text" id="txtInput" placeholder="Say something…">
+      <button type="button" class="ib-send" onclick="sendText()" title="Send" aria-label="Send">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div class="conn-status">
+      <span class="cs-dot" id="csDot"></span>
+      <span id="csLbl">not connected — open ⚙ to configure</span>
+    </div>
   </div>
 </main>
 
-<!-- SPEECH BAR -->
 <div class="speech-bar hidden" id="speechBar">
   <div class="sp-badge" id="spBadge">LISTENING</div>
   <div class="sp-text" id="spText">…</div>
@@ -386,11 +282,8 @@ main{
 <script>
 'use strict';
 
-/* ─────────────────────────────────────────────────
-   FACE DATA — 16×16 pixel art (1=on, 0=off)
-───────────────────────────────────────────────── */
+/* ── FACE DATA — 16×16 pixel art (1=on) ─────────── */
 const pf = s => s.replace(/\s/g,'').split('').map(Number);
-
 const FACES = {
   neutral:   pf('0000111111110000 0011000000001100 0010000000000100 0100000000000010 0100000000000010 0100011001100010 0100011001100010 0100000000000010 0100000110000010 0100000000000010 0100000000000010 0100011111100010 0100000000000010 0010000000000100 0011000000001100 0000111111110000'),
   happy:     pf('0000111111110000 0011000000001100 0010000000000100 0100000000000010 0100000000000010 0100011001100010 0100011001100010 0100000000000010 0100000110000010 0100000000000010 0100010000100010 0100001111000010 0100000000000010 0010000000000100 0011000000001100 0000111111110000'),
@@ -402,414 +295,296 @@ const FACES = {
   error:     pf('0000111111110000 0011000000001100 0010000000000100 0100000000000010 0100101001010010 0100010000100010 0100101001010010 0100000000000010 0100000000000010 0100000000000010 0100000000000010 0100011111100010 0100000000000010 0010000000000100 0011000000001100 0000111111110000'),
 };
 
-/* ─────────────────────────────────────────────────
-   GRID SETUP
-───────────────────────────────────────────────── */
+/* ── GRID SETUP ─────────────────────────────────── */
 const faceGrid  = document.getElementById('faceGrid');
 const faceLabel = document.getElementById('faceLabel');
 const faceFrame = document.getElementById('faceFrame');
 const cells = [];
+for (let i=0;i<256;i++){ const c=document.createElement('div'); c.className='cell'; faceGrid.appendChild(c); cells.push(c); }
 
-for (let i = 0; i < 256; i++) {
-  const c = document.createElement('div');
-  c.className = 'cell';
-  faceGrid.appendChild(c);
-  cells.push(c);
-}
+let curFace='neutral', curData=[...FACES.neutral];
+const MOOD_NAMES=['neutral','happy','sad','surprised'];
+let currentMood='neutral';
+let isSpeaking=false;
 
-let curFace = 'neutral';
-let curData = [...FACES.neutral];
-
-// "Mood" = the persistent expression the model actually chose (neutral/happy/sad/surprised).
-// thinking/speaking/error/sleeping are transient overlays that borrow the face for a moment
-// without changing what mood we're actually in — so we always know what to restore to.
-const MOOD_NAMES = ['neutral','happy','sad','surprised'];
-let currentMood = 'neutral';
-let isSpeaking = false; // true while the mouth-flap animation is running over the mood face
-
-function setFace(name) {
-  const d = FACES[name]; if (!d) return;
-  curFace = name; curData = [...d];
-  if (MOOD_NAMES.includes(name)) currentMood = name;
-  d.forEach((v,i) => cells[i].classList.toggle('on', v===1));
-  faceLabel.textContent = name.toUpperCase();
-  faceLabel.classList.toggle('lit', name !== 'neutral');
+function setFace(name){
+  const d=FACES[name]; if(!d) return;
+  curFace=name; curData=[...d];
+  if (MOOD_NAMES.includes(name)) currentMood=name;
+  d.forEach((v,i)=>cells[i].classList.toggle('on',v===1));
+  faceLabel.textContent=name.toUpperCase();
+  faceLabel.classList.toggle('lit',name!=='neutral');
   refreshFrameLit();
-  document.querySelectorAll('.expr-btn').forEach(b => b.classList.toggle('active', b.dataset.f === name));
+  document.querySelectorAll('.expr-btn').forEach(b=>b.classList.toggle('active',b.dataset.f===name));
 }
+function refreshFrameLit(){ faceFrame.classList.toggle('lit', isSpeaking || ['surprised','error'].includes(curFace)); }
 
-function refreshFrameLit() {
-  faceFrame.classList.toggle('lit', isSpeaking || ['surprised','error'].includes(curFace));
-}
-
-/* ─────────────────────────────────────────────────
-   BLINK
-───────────────────────────────────────────────── */
-let blinkT = null;
-function scheduleBlink() {
+/* ── BLINK ──────────────────────────────────────── */
+let blinkT=null;
+function scheduleBlink(){
   clearTimeout(blinkT);
-  blinkT = setTimeout(() => {
-    if (['sleeping','error','surprised'].includes(curFace)) { scheduleBlink(); return; }
-    const saved = [];
-    for (let c=0;c<16;c++) {
-      [80+c,96+c].forEach(i => { saved.push([i,curData[i]]); cells[i].classList.remove('on'); });
-    }
-    setTimeout(() => { saved.forEach(([i,v])=>{ if(v) cells[i].classList.add('on'); }); scheduleBlink(); }, 110);
-  }, 3000 + Math.random()*5000);
+  blinkT=setTimeout(()=>{
+    if (['sleeping','error','surprised'].includes(curFace)){ scheduleBlink(); return; }
+    const saved=[];
+    for (let c=0;c<16;c++){ [80+c,96+c].forEach(i=>{ saved.push([i,curData[i]]); cells[i].classList.remove('on'); }); }
+    setTimeout(()=>{ saved.forEach(([i,v])=>{ if(v) cells[i].classList.add('on'); }); scheduleBlink(); },110);
+  },3000+Math.random()*5000);
 }
 scheduleBlink();
 
-/* ─────────────────────────────────────────────────
-   SPEAKING MOUTH ANIMATION
-───────────────────────────────────────────────── */
-let speakT = null;
-function startSpeakAnim() {
-  isSpeaking = true;
-  refreshFrameLit();
-  let f = 0;
-  const step = () => {
-    if (!isSpeaking) return;
-    for (let r=9;r<=12;r++) for (let c=2;c<=13;c++) cells[r*16+c].classList.remove('on');
-    if (f%2===0) {
+/* ── SPEAKING MOUTH ANIMATION ───────────────────── */
+let speakT=null;
+function startSpeakAnim(){
+  isSpeaking=true; refreshFrameLit();
+  let f=0;
+  const step=()=>{
+    if(!isSpeaking) return;
+    for(let r=9;r<=12;r++) for(let c=2;c<=13;c++) cells[r*16+c].classList.remove('on');
+    if(f%2===0){
       [6,7,8].forEach(c=>{cells[9*16+c].classList.add('on');cells[12*16+c].classList.add('on')});
       [5,9].forEach(c=>{cells[10*16+c].classList.add('on');cells[11*16+c].classList.add('on')});
     } else {
       [5,6,7,8,9].forEach(c=>{cells[10*16+c].classList.add('on');cells[11*16+c].classList.add('on')});
     }
-    f++; speakT = setTimeout(step, 180);
+    f++; speakT=setTimeout(step,180);
   };
   step();
 }
-function stopSpeakAnim() {
-  isSpeaking = false;
-  clearTimeout(speakT);
-  refreshFrameLit();
-  setFace(curFace); // redraw the mood face cleanly — wipes any mouth cells left mid-flap
-}
+function stopSpeakAnim(){ isSpeaking=false; clearTimeout(speakT); refreshFrameLit(); setFace(curFace); }
 
-/* ─────────────────────────────────────────────────
-   IDLE / SLEEP
-   Falls asleep after a stretch of no real activity (sending, mic,
-   incoming messages, speaking). Boot also starts asleep.
-───────────────────────────────────────────────── */
-const IDLE_MS = 120000; // 2 minutes
-let idleTimer = null;
+/* ── IDLE / SLEEP ───────────────────────────────── */
+const IDLE_MS=120000;
+let idleTimer=null;
+function resetIdleTimer(){ clearTimeout(idleTimer); idleTimer=setTimeout(goToSleep,IDLE_MS); }
+function goToSleep(){ if(curFace==='thinking'||isSpeaking||micOn){ resetIdleTimer(); return; } setFace('sleeping'); }
 
-function resetIdleTimer() {
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(goToSleep, IDLE_MS);
-}
-
-function goToSleep() {
-  // Don't yank the face away mid-exchange — just recheck after another interval.
-  if (curFace === 'thinking' || isSpeaking || micOn) { resetIdleTimer(); return; }
-  setFace('sleeping');
-}
-
-/* ─────────────────────────────────────────────────
-   EXPRESSION BUTTONS (settings panel)
-───────────────────────────────────────────────── */
-const EXPR_NAMES = ['neutral','happy','sad','surprised','thinking','sleeping','speaking','error'];
-const exprGrid = document.getElementById('exprGrid');
-EXPR_NAMES.forEach(n => {
-  const b = document.createElement('button');
-  b.className = 'expr-btn' + (n==='neutral'?' active':'');
-  b.dataset.f = n;
-  b.textContent = n;
-  b.onclick = () => setFace(n);
+/* ── EXPRESSION BUTTONS ─────────────────────────── */
+const EXPR_NAMES=['neutral','happy','sad','surprised','thinking','sleeping','speaking','error'];
+const exprGrid=document.getElementById('exprGrid');
+EXPR_NAMES.forEach(n=>{
+  const b=document.createElement('button');
+  b.className='expr-btn'+(n==='neutral'?' active':'');
+  b.dataset.f=n; b.textContent=n; b.onclick=()=>setFace(n);
   exprGrid.appendChild(b);
 });
 
-/* ─────────────────────────────────────────────────
-   SPEECH BAR
-───────────────────────────────────────────────── */
-const speechBar = document.getElementById('speechBar');
-const spBadge   = document.getElementById('spBadge');
-const spText    = document.getElementById('spText');
+/* ── THOUGHT STREAM ─────────────────────────────── */
+const thoughtsEl = document.getElementById('thoughts');
+const thoughtStream = document.getElementById('thoughtStream');
 
-function showSpeech(mode, text) {
+function clearThoughts(){
+  thoughtStream.textContent='';
+  thoughtsEl.classList.remove('done');
+  thoughtsEl.classList.add('active');
+}
+function appendThought(t){
+  if(!t) return;
+  thoughtsEl.classList.remove('done');
+  thoughtsEl.classList.add('active');
+  thoughtStream.textContent += t;
+  // Newest text is pinned to the bottom (flex-end); older scrolls up under the fade.
+}
+function thoughtsDone(){
+  thoughtsEl.classList.remove('active');
+  thoughtsEl.classList.add('done');
+}
+
+/* ── SPEECH BAR ─────────────────────────────────── */
+const speechBar=document.getElementById('speechBar');
+const spBadge=document.getElementById('spBadge');
+const spText=document.getElementById('spText');
+function showSpeech(mode,text){
   speechBar.classList.remove('hidden');
-  spBadge.className = `sp-badge ${mode}`;
-  spBadge.textContent = mode === 'listening' ? 'LISTENING' : 'SPEAKING';
-  spText.innerHTML = text || '…';
+  spBadge.className=`sp-badge ${mode}`;
+  spBadge.textContent=mode==='listening'?'LISTENING':'SPEAKING';
+  spText.innerHTML=text||'…';
 }
-function hideSpeech() { speechBar.classList.add('hidden'); }
-
-function renderWords(text, idx) {
-  // Split the same way onboundary computes idx (any run of whitespace), so the
-  // highlighted word stays aligned even if the reply has double spaces/newlines.
-  spText.innerHTML = text.split(/\s+/).filter(Boolean)
-    .map((w,i) => `<span class="word ${i<idx?'spoken':i===idx?'current':''}">${w} </span>`)
-    .join('');
+function hideSpeech(){ speechBar.classList.add('hidden'); }
+function renderWords(text,idx){
+  // Split the same way onboundary computes idx (any whitespace run), so the
+  // highlighted word stays aligned even with double spaces or newlines.
+  spText.innerHTML=text.split(/\s+/).filter(Boolean)
+    .map((w,i)=>`<span class="word ${i<idx?'spoken':i===idx?'current':''}">${w} </span>`).join('');
 }
 
-/* ─────────────────────────────────────────────────
-   TTS
-───────────────────────────────────────────────── */
+/* ── TTS ────────────────────────────────────────── */
 let ttsRate=1, ttsPitch=1, ttsVol=.85, ttsVoice=null;
-
-function loadVoices() {
-  const sel = document.getElementById('voiceSelect');
-  const vs  = speechSynthesis.getVoices();
-  if (!vs.length) { setTimeout(loadVoices,200); return; }
-  sel.innerHTML = '';
-  vs.forEach((v,i) => {
-    const o = document.createElement('option');
+function loadVoices(){
+  const sel=document.getElementById('voiceSelect');
+  const vs=speechSynthesis.getVoices();
+  if(!vs.length){ setTimeout(loadVoices,200); return; }
+  sel.innerHTML='';
+  vs.forEach((v,i)=>{
+    const o=document.createElement('option');
     o.value=i; o.textContent=`${v.name} (${v.lang})`;
-    if (!ttsVoice && v.lang.startsWith('en')) { o.selected=true; ttsVoice=v; }
+    if(!ttsVoice && v.lang.startsWith('en')){ o.selected=true; ttsVoice=v; }
     sel.appendChild(o);
   });
-  sel.onchange = () => { ttsVoice = vs[+sel.value]; };
+  sel.onchange=()=>{ ttsVoice=vs[+sel.value]; };
 }
-if (typeof speechSynthesis !== 'undefined') {
-  if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
+if(typeof speechSynthesis!=='undefined'){
+  if(speechSynthesis.onvoiceschanged!==undefined) speechSynthesis.onvoiceschanged=loadVoices;
   loadVoices();
 }
-
-function speak(text) {
-  if (typeof speechSynthesis === 'undefined') return;
+function speak(text){
+  if(typeof speechSynthesis==='undefined') return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  if (ttsVoice) u.voice = ttsVoice;
+  const u=new SpeechSynthesisUtterance(text);
+  if(ttsVoice) u.voice=ttsVoice;
   u.rate=ttsRate; u.pitch=ttsPitch; u.volume=ttsVol;
-  u.onstart = () => {
-    resetIdleTimer();
-    startSpeakAnim();
-    showSpeech('speaking', text);
-    setActivity('act','SPEAKING');
-  };
-  u.onboundary = e => {
-    if (e.name==='word') renderWords(text, text.slice(0,e.charIndex).trim().split(/\s+/).length-1);
-  };
-  u.onend = () => {
-    stopSpeakAnim();
-    hideSpeech(); clearActivity();
-  };
-  u.onerror = e => {
-    stopSpeakAnim();
-    setFace('error');
-    hideSpeech(); clearActivity();
-    setTimeout(()=>setFace(currentMood),2000);
-  };
+  u.onstart=()=>{ resetIdleTimer(); startSpeakAnim(); showSpeech('speaking',text); setActivity('act','SPEAKING'); };
+  u.onboundary=e=>{ if(e.name==='word') renderWords(text, text.slice(0,e.charIndex).trim().split(/\s+/).length-1); };
+  u.onend=()=>{ stopSpeakAnim(); hideSpeech(); clearActivity(); };
+  u.onerror=e=>{ stopSpeakAnim(); setFace('error'); hideSpeech(); clearActivity(); setTimeout(()=>setFace(currentMood),2000); };
   speechSynthesis.speak(u);
 }
-
-function onSl(t,v) {
+function onSl(t,v){
   const n=parseFloat(v);
-  if(t==='rate')  { ttsRate=n;  document.getElementById('vRate').textContent=n.toFixed(1); }
-  if(t==='pitch') { ttsPitch=n; document.getElementById('vPitch').textContent=n.toFixed(1); }
-  if(t==='vol')   { ttsVol=n;   document.getElementById('vVol').textContent=n.toFixed(2); }
+  if(t==='rate'){ ttsRate=n; document.getElementById('vRate').textContent=n.toFixed(1); }
+  if(t==='pitch'){ ttsPitch=n; document.getElementById('vPitch').textContent=n.toFixed(1); }
+  if(t==='vol'){ ttsVol=n; document.getElementById('vVol').textContent=n.toFixed(2); }
 }
 
-/* ─────────────────────────────────────────────────
-   STT
-───────────────────────────────────────────────── */
+/* ── STT ────────────────────────────────────────── */
 let recog=null, micOn=false;
-
-function initRecog() {
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-  if (!SR) { return false; }
-  recog = new SR();
+function initRecog(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return false;
+  recog=new SR();
   recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onstart  = () => { resetIdleTimer(); micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
-  recog.onresult = e => {
+  recog.onstart=()=>{ resetIdleTimer(); micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
+  recog.onresult=e=>{
     let interim='',final='';
-    for (let i=e.resultIndex;i<e.results.length;i++) {
+    for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
-      if (e.results[i].isFinal) final+=t; else interim+=t;
+      if(e.results[i].isFinal) final+=t; else interim+=t;
     }
     showSpeech('listening', final||interim);
-    if (final.trim()) { sendToWs({type:'text',content:final.trim()}); }
+    if(final.trim()){ clearThoughts(); sendToWs({type:'text',content:final.trim()}); }
   };
-  recog.onerror = e => { if(e.error==='no-speech') return; stopMic(); };
-  recog.onend   = () => { if (micOn) try { recog.start(); } catch(_) {} };
+  recog.onerror=e=>{ if(e.error==='no-speech') return; stopMic(); };
+  recog.onend=()=>{ if(micOn) try{ recog.start(); }catch(_){} };
   return true;
 }
+function toggleMic(){ micOn?stopMic():startMic(); }
+function startMic(){ if(!recog && !initRecog()) return; micOn=true; try{ recog.start(); }catch(e){} }
+function stopMic(){ micOn=false; try{ recog&&recog.stop(); }catch(_){} setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity(); }
+function setMicUI(on){ document.getElementById('micBtn').classList.toggle('on',on); document.getElementById('inputBar').classList.toggle('recording',on); }
 
-function toggleMic() { micOn ? stopMic() : startMic(); }
-function startMic()  { if(!recog && !initRecog()) return; micOn=true; try { recog.start(); } catch(e){} }
-function stopMic()   {
-  micOn=false; try { recog&&recog.stop(); } catch(_) {}
-  setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity();
-}
-function setMicUI(on) {
-  document.getElementById('micBtn').classList.toggle('on',on);
-  document.getElementById('inputBar').classList.toggle('recording',on);
-}
-
-/* ─────────────────────────────────────────────────
-   TEXT INPUT
-───────────────────────────────────────────────── */
-const txtInput = document.getElementById('txtInput');
-txtInput.addEventListener('keydown', e => {
-  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
-});
-
-function sendText() {
-  const t = txtInput.value.trim(); if (!t) return;
-  sendToWs({type:'text', content:t});
-  resetIdleTimer();
-  setFace('thinking');
-  txtInput.value='';
+/* ── TEXT INPUT ─────────────────────────────────── */
+const txtInput=document.getElementById('txtInput');
+txtInput.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendText(); } });
+function sendText(){
+  const t=txtInput.value.trim(); if(!t) return;
+  clearThoughts();
+  sendToWs({type:'text',content:t});
+  resetIdleTimer(); setFace('thinking'); txtInput.value='';
 }
 
 /* ─────────────────────────────────────────────────
-   WEBSOCKET
-───────────────────────────────────────────────── */
-/*
+   WEBSOCKET + CONNECTION STATE
    One source of truth: `connState`. Both the header pip and the bottom
-   status dot are rendered from it by renderConn(), so they can never
-   disagree (this is what caused the old "dot randomly wrong" bug).
-   Transient activity (SPEAKING / LISTENING) overlays only the header
-   label, then always restores to connState.
-
-   Reconnect: if the socket drops and the user didn't hit Disconnect,
-   we quietly retry with exponential backoff, showing "CONNECTING…".
-*/
-
-// pip = header dot class, dot = bottom dot class ('ok'|'act'|'err'|'')
+   status dot render from it, so they can never disagree. Transient
+   activity (SPEAKING/LISTENING) overlays only the header, then restores.
+   Reconnect: on an unexpected drop we quietly retry with backoff.
+───────────────────────────────────────────────── */
 const CONN_STATES = {
-  offline:    { pip: '',    dot: '',   label: 'OFFLINE' },
-  connecting: { pip: 'act', dot: '',   label: 'CONNECTING…' },
-  waiting:    { pip: 'act', dot: 'ok', label: 'WAITING FOR FIRST MESSAGE' },
-  online:     { pip: 'ok',  dot: 'ok', label: 'MODEL ONLINE' },
+  offline:    { pip:'',    dot:'',   label:'OFFLINE' },
+  connecting: { pip:'act', dot:'',   label:'CONNECTING…' },
+  waiting:    { pip:'act', dot:'ok', label:'WAITING FOR FIRST MESSAGE' },
+  online:     { pip:'ok',  dot:'ok', label:'MODEL ONLINE' },
 };
-let connState = 'offline';
+let connState='offline';
+let activityPip=null, activityLabel=null;
 
-// Transient header overlay (SPEAKING / LISTENING). null = show connState.
-let activityPip = null, activityLabel = null;
+function setConnState(s){ if(!CONN_STATES[s]) return; connState=s; renderConn(); }
+function setActivity(pip,label){ activityPip=pip; activityLabel=label; renderConn(); }
+function clearActivity(){ activityPip=activityLabel=null; renderConn(); }
 
-function setConnState(state) {
-  if (!CONN_STATES[state]) return;
-  connState = state;
-  renderConn();
-}
-function setActivity(pip, label) { activityPip = pip; activityLabel = label; renderConn(); }
-function clearActivity()          { activityPip = activityLabel = null;      renderConn(); }
-
-function renderConn() {
-  const base = CONN_STATES[connState];
-
-  // Header pip + label — activity overlay wins if present
-  const pip   = activityPip   !== null ? activityPip   : base.pip;
-  const label = activityLabel !== null ? activityLabel : base.label;
-  document.getElementById('hPip').className = 'conn-pip' + (pip ? ' ' + pip : '');
-  document.getElementById('hLbl').textContent = label;
-
-  // Bottom dot + label — always the real connState, no overlay
-  document.getElementById('csDot').className = 'cs-dot' + (base.dot ? ' ' + base.dot : '');
-  const url = document.getElementById('wsUrl').value;
-  document.getElementById('csLbl').textContent = {
-    offline:    'not connected — open \u2699 to configure',
-    connecting: 'connecting\u2026',
-    waiting:    'connected to ' + url,
-    online:     'connected to ' + url,
+function renderConn(){
+  const base=CONN_STATES[connState];
+  const pip=activityPip!==null?activityPip:base.pip;
+  const label=activityLabel!==null?activityLabel:base.label;
+  document.getElementById('hPip').className='conn-pip'+(pip?' '+pip:'');
+  document.getElementById('hLbl').textContent=label;
+  document.getElementById('csDot').className='cs-dot'+(base.dot?' '+base.dot:'');
+  const url=document.getElementById('wsUrl').value;
+  document.getElementById('csLbl').textContent={
+    offline:'not connected — open ⚙ to configure',
+    connecting:'connecting…',
+    waiting:'connected to '+url,
+    online:'connected to '+url,
   }[connState];
-
-  // Connect button
-  const off = connState === 'offline';
-  const btn = document.getElementById('btnConn');
-  btn.textContent = off ? 'Connect' : 'Disconnect';
-  btn.className   = off ? 'sp-btn active' : 'sp-btn danger';
+  const off=connState==='offline';
+  const btn=document.getElementById('btnConn');
+  btn.textContent=off?'Connect':'Disconnect';
+  btn.className=off?'sp-btn active':'sp-btn danger';
 }
 
-/* ── Socket + auto-reconnect ─────────────────────── */
-let ws = null;
-let userClosed     = false;   // true after Disconnect — suppresses auto-reconnect
-let reconnectMs    = 1000;    // current backoff delay
-let reconnectTimer = null;
-const RECONNECT_MAX = 15000;
+let ws=null, userClosed=false, reconnectMs=1000, reconnectTimer=null;
+const RECONNECT_MAX=15000;
 
-function toggleConnect() {
-  if (connState === 'offline') { userClosed = false; wsOpen(); }
-  else                         { wsClose(); }
-}
+function toggleConnect(){ if(connState==='offline'){ userClosed=false; wsOpen(); } else { wsClose(); } }
 
-function wsOpen() {
-  // Never stack sockets: bail if one is already open or connecting.
-  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
-
-  const url = document.getElementById('wsUrl').value.trim();
-  if (!url) return;
-
+function wsOpen(){
+  if(ws && (ws.readyState===WebSocket.CONNECTING||ws.readyState===WebSocket.OPEN)) return;
+  const url=document.getElementById('wsUrl').value.trim();
+  if(!url) return;
   setConnState('connecting');
-  try {
-    ws = new WebSocket(url);
-  } catch (e) {
-    console.warn('[ws] could not open socket:', e);
-    scheduleReconnect();
-    return;
-  }
-
-  ws.onopen    = () => { reconnectMs = 1000; setConnState('waiting'); };
-  ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.warn('[ws] bad message:', err); } };
-  ws.onerror   = () => { console.warn('[ws] socket error'); };   // onclose fires next; reconnect handled there
-  ws.onclose   = () => {
-    ws = null;
-    if (userClosed) { setConnState('offline'); return; }
-    setConnState('connecting');   // quiet: no alarm, just retry
-    scheduleReconnect();
+  try { ws=new WebSocket(url); }
+  catch(e){ console.warn('[ws] could not open socket:',e); scheduleReconnect(); return; }
+  ws.onopen=()=>{ reconnectMs=1000; setConnState('waiting'); };
+  ws.onmessage=e=>{ try{ onMsg(JSON.parse(e.data)); }catch(err){ console.warn('[ws] bad message:',err); } };
+  ws.onerror=()=>{ console.warn('[ws] socket error'); };
+  ws.onclose=()=>{
+    ws=null;
+    if(userClosed){ setConnState('offline'); return; }
+    setConnState('connecting'); scheduleReconnect();
   };
 }
-
-function scheduleReconnect() {
+function scheduleReconnect(){
   clearTimeout(reconnectTimer);
-  const delay = reconnectMs + Math.random() * 250;        // small jitter
-  reconnectMs = Math.min(reconnectMs * 2, RECONNECT_MAX); // back off for next time
+  const delay=reconnectMs+Math.random()*250;
+  reconnectMs=Math.min(reconnectMs*2,RECONNECT_MAX);
   console.info(`[ws] reconnecting in ${Math.round(delay)}ms`);
-  reconnectTimer = setTimeout(wsOpen, delay);
+  reconnectTimer=setTimeout(wsOpen,delay);
 }
-
-function wsClose() {
-  userClosed = true;
-  clearTimeout(reconnectTimer);
-  if (ws) { try { ws.close(); } catch (_) {} }
-  ws = null;
+function wsClose(){
+  userClosed=true; clearTimeout(reconnectTimer);
+  if(ws){ try{ ws.close(); }catch(_){} } ws=null;
   setConnState('offline');
 }
+function sendToWs(d){ if(!ws||ws.readyState!==WebSocket.OPEN) return; ws.send(JSON.stringify(d)); }
 
-function sendToWs(d) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify(d));
-}
-
-function onMsg(m) {
+function onMsg(m){
   resetIdleTimer();
-  switch (m.type) {
+  switch(m.type){
+    case 'thinking':   appendThought(m.content||''); break;
     case 'response':
-      if (connState !== 'online') setConnState('online');
-      if (m.expression) setFace(m.expression);
-      if (m.content)    speak(m.content);
+      if(connState!=='online') setConnState('online');
+      thoughtsDone();
+      if(m.expression) setFace(m.expression);
+      if(m.content)    speak(m.content);
       break;
-    case 'expression': setFace(m.expression || 'neutral'); break;
-    case 'speak':      speak(m.content || ''); break;
+    case 'expression': setFace(m.expression||'neutral'); break;
+    case 'speak':      speak(m.content||''); break;
   }
 }
 
-/* ─────────────────────────────────────────────────
-   SETTINGS PANEL
-───────────────────────────────────────────────── */
-const settingsEl = document.getElementById('settings');
-function toggleSettings() { settingsEl.classList.toggle('open'); }
-
-document.addEventListener('click', e => {
-  if (!settingsEl.contains(e.target) && !document.querySelector('.btn-cog').contains(e.target))
+/* ── SETTINGS ───────────────────────────────────── */
+const settingsEl=document.getElementById('settings');
+function toggleSettings(){ settingsEl.classList.toggle('open'); }
+document.addEventListener('click',e=>{
+  if(!settingsEl.contains(e.target) && !document.querySelector('.cog').contains(e.target))
     settingsEl.classList.remove('open');
 });
 
-/* ─────────────────────────────────────────────────
-   BOOT
-───────────────────────────────────────────────── */
-const defaultWsUrl = `ws://${window.location.host}/ws`;
-document.getElementById('wsUrl').value = defaultWsUrl;
+/* ── BOOT ───────────────────────────────────────── */
+document.getElementById('wsUrl').value=`ws://${window.location.host}/ws`;
+renderConn();
 setFace('sleeping');
 resetIdleTimer();
-
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    if (connState === 'offline') toggleConnect();
-  }, 100);
-});
+window.addEventListener('load',()=>{ setTimeout(()=>{ if(connState==='offline') toggleConnect(); },100); });
 </script>
 </body>
 </html>
