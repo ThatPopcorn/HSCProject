@@ -420,14 +420,26 @@ for (let i = 0; i < 256; i++) {
 let curFace = 'neutral';
 let curData = [...FACES.neutral];
 
+// "Mood" = the persistent expression the model actually chose (neutral/happy/sad/surprised).
+// thinking/speaking/error/sleeping are transient overlays that borrow the face for a moment
+// without changing what mood we're actually in — so we always know what to restore to.
+const MOOD_NAMES = ['neutral','happy','sad','surprised'];
+let currentMood = 'neutral';
+let isSpeaking = false; // true while the mouth-flap animation is running over the mood face
+
 function setFace(name) {
   const d = FACES[name]; if (!d) return;
   curFace = name; curData = [...d];
+  if (MOOD_NAMES.includes(name)) currentMood = name;
   d.forEach((v,i) => cells[i].classList.toggle('on', v===1));
   faceLabel.textContent = name.toUpperCase();
   faceLabel.classList.toggle('lit', name !== 'neutral');
-  faceFrame.classList.toggle('lit', ['speaking','surprised','error'].includes(name));
+  refreshFrameLit();
   document.querySelectorAll('.expr-btn').forEach(b => b.classList.toggle('active', b.dataset.f === name));
+}
+
+function refreshFrameLit() {
+  faceFrame.classList.toggle('lit', isSpeaking || ['surprised','error'].includes(curFace));
 }
 
 /* ─────────────────────────────────────────────────
@@ -452,9 +464,11 @@ scheduleBlink();
 ───────────────────────────────────────────────── */
 let speakT = null;
 function startSpeakAnim() {
+  isSpeaking = true;
+  refreshFrameLit();
   let f = 0;
   const step = () => {
-    if (curFace !== 'speaking') return;
+    if (!isSpeaking) return;
     for (let r=9;r<=12;r++) for (let c=2;c<=13;c++) cells[r*16+c].classList.remove('on');
     if (f%2===0) {
       [6,7,8].forEach(c=>{cells[9*16+c].classList.add('on');cells[12*16+c].classList.add('on')});
@@ -466,7 +480,31 @@ function startSpeakAnim() {
   };
   step();
 }
-function stopSpeakAnim() { clearTimeout(speakT); }
+function stopSpeakAnim() {
+  isSpeaking = false;
+  clearTimeout(speakT);
+  refreshFrameLit();
+  setFace(curFace); // redraw the mood face cleanly — wipes any mouth cells left mid-flap
+}
+
+/* ─────────────────────────────────────────────────
+   IDLE / SLEEP
+   Falls asleep after a stretch of no real activity (sending, mic,
+   incoming messages, speaking). Boot also starts asleep.
+───────────────────────────────────────────────── */
+const IDLE_MS = 120000; // 2 minutes
+let idleTimer = null;
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(goToSleep, IDLE_MS);
+}
+
+function goToSleep() {
+  // Don't yank the face away mid-exchange — just recheck after another interval.
+  if (curFace === 'thinking' || isSpeaking || micOn) { resetIdleTimer(); return; }
+  setFace('sleeping');
+}
 
 /* ─────────────────────────────────────────────────
    EXPRESSION BUTTONS (settings panel)
@@ -498,7 +536,9 @@ function showSpeech(mode, text) {
 function hideSpeech() { speechBar.classList.add('hidden'); }
 
 function renderWords(text, idx) {
-  spText.innerHTML = text.split(' ')
+  // Split the same way onboundary computes idx (any run of whitespace), so the
+  // highlighted word stays aligned even if the reply has double spaces/newlines.
+  spText.innerHTML = text.split(/\s+/).filter(Boolean)
     .map((w,i) => `<span class="word ${i<idx?'spoken':i===idx?'current':''}">${w} </span>`)
     .join('');
 }
@@ -533,21 +573,23 @@ function speak(text) {
   if (ttsVoice) u.voice = ttsVoice;
   u.rate=ttsRate; u.pitch=ttsPitch; u.volume=ttsVol;
   u.onstart = () => {
-    setFace('speaking'); startSpeakAnim();
+    resetIdleTimer();
+    startSpeakAnim();
     showSpeech('speaking', text);
-    setHeader('teal','SPEAKING');
+    setActivity('act','SPEAKING');
   };
   u.onboundary = e => {
     if (e.name==='word') renderWords(text, text.slice(0,e.charIndex).trim().split(/\s+/).length-1);
   };
   u.onend = () => {
-    stopSpeakAnim(); setFace('neutral');
-    hideSpeech(); setHeader('','ONLINE');
+    stopSpeakAnim();
+    hideSpeech(); clearActivity();
   };
   u.onerror = e => {
-    stopSpeakAnim(); setFace('error');
-    hideSpeech(); setHeader('','ONLINE');
-    setTimeout(()=>setFace('neutral'),2000);
+    stopSpeakAnim();
+    setFace('error');
+    hideSpeech(); clearActivity();
+    setTimeout(()=>setFace(currentMood),2000);
   };
   speechSynthesis.speak(u);
 }
@@ -569,7 +611,7 @@ function initRecog() {
   if (!SR) { return false; }
   recog = new SR();
   recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onstart  = () => { micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setHeader('teal','LISTENING'); };
+  recog.onstart  = () => { resetIdleTimer(); micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
   recog.onresult = e => {
     let interim='',final='';
     for (let i=e.resultIndex;i<e.results.length;i++) {
@@ -588,7 +630,7 @@ function toggleMic() { micOn ? stopMic() : startMic(); }
 function startMic()  { if(!recog && !initRecog()) return; micOn=true; try { recog.start(); } catch(e){} }
 function stopMic()   {
   micOn=false; try { recog&&recog.stop(); } catch(_) {}
-  setMicUI(false); setFace('neutral'); hideSpeech(); setHeader('ok','ONLINE');
+  setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity();
 }
 function setMicUI(on) {
   document.getElementById('micBtn').classList.toggle('on',on);
@@ -606,6 +648,7 @@ txtInput.addEventListener('keydown', e => {
 function sendText() {
   const t = txtInput.value.trim(); if (!t) return;
   sendToWs({type:'text', content:t});
+  resetIdleTimer();
   setFace('thinking');
   txtInput.value='';
 }
@@ -613,59 +656,134 @@ function sendText() {
 /* ─────────────────────────────────────────────────
    WEBSOCKET
 ───────────────────────────────────────────────── */
-let ws=null, wsConn=false;
+/*
+   One source of truth: `connState`. Both the header pip and the bottom
+   status dot are rendered from it by renderConn(), so they can never
+   disagree (this is what caused the old "dot randomly wrong" bug).
+   Transient activity (SPEAKING / LISTENING) overlays only the header
+   label, then always restores to connState.
 
-function toggleConnect() { wsConn ? wsClose() : wsOpen(); }
+   Reconnect: if the socket drops and the user didn't hit Disconnect,
+   we quietly retry with exponential backoff, showing "CONNECTING…".
+*/
 
-function wsOpen() {
-  const url = document.getElementById('wsUrl').value.trim();
-  if (!url) return;
-  try {
-    ws = new WebSocket(url);
-    ws.onopen    = () => { wsConn=true;  setConnUI(true); };
-    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch(_){} };
-    ws.onclose   = () => { wsConn=false; ws=null; setConnUI(false); };
-    ws.onerror   = () => {};
-  } catch(e) {}
+// pip = header dot class, dot = bottom dot class ('ok'|'act'|'err'|'')
+const CONN_STATES = {
+  offline:    { pip: '',    dot: '',   label: 'OFFLINE' },
+  connecting: { pip: 'act', dot: '',   label: 'CONNECTING…' },
+  waiting:    { pip: 'act', dot: 'ok', label: 'WAITING FOR FIRST MESSAGE' },
+  online:     { pip: 'ok',  dot: 'ok', label: 'MODEL ONLINE' },
+};
+let connState = 'offline';
+
+// Transient header overlay (SPEAKING / LISTENING). null = show connState.
+let activityPip = null, activityLabel = null;
+
+function setConnState(state) {
+  if (!CONN_STATES[state]) return;
+  connState = state;
+  renderConn();
+}
+function setActivity(pip, label) { activityPip = pip; activityLabel = label; renderConn(); }
+function clearActivity()          { activityPip = activityLabel = null;      renderConn(); }
+
+function renderConn() {
+  const base = CONN_STATES[connState];
+
+  // Header pip + label — activity overlay wins if present
+  const pip   = activityPip   !== null ? activityPip   : base.pip;
+  const label = activityLabel !== null ? activityLabel : base.label;
+  document.getElementById('hPip').className = 'conn-pip' + (pip ? ' ' + pip : '');
+  document.getElementById('hLbl').textContent = label;
+
+  // Bottom dot + label — always the real connState, no overlay
+  document.getElementById('csDot').className = 'cs-dot' + (base.dot ? ' ' + base.dot : '');
+  const url = document.getElementById('wsUrl').value;
+  document.getElementById('csLbl').textContent = {
+    offline:    'not connected — open \u2699 to configure',
+    connecting: 'connecting\u2026',
+    waiting:    'connected to ' + url,
+    online:     'connected to ' + url,
+  }[connState];
+
+  // Connect button
+  const off = connState === 'offline';
+  const btn = document.getElementById('btnConn');
+  btn.textContent = off ? 'Connect' : 'Disconnect';
+  btn.className   = off ? 'sp-btn active' : 'sp-btn danger';
 }
 
-function wsClose() { ws&&ws.close(); wsConn=false; ws=null; setConnUI(false); }
+/* ── Socket + auto-reconnect ─────────────────────── */
+let ws = null;
+let userClosed     = false;   // true after Disconnect — suppresses auto-reconnect
+let reconnectMs    = 1000;    // current backoff delay
+let reconnectTimer = null;
+const RECONNECT_MAX = 15000;
+
+function toggleConnect() {
+  if (connState === 'offline') { userClosed = false; wsOpen(); }
+  else                         { wsClose(); }
+}
+
+function wsOpen() {
+  // Never stack sockets: bail if one is already open or connecting.
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+  const url = document.getElementById('wsUrl').value.trim();
+  if (!url) return;
+
+  setConnState('connecting');
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    console.warn('[ws] could not open socket:', e);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen    = () => { reconnectMs = 1000; setConnState('waiting'); };
+  ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.warn('[ws] bad message:', err); } };
+  ws.onerror   = () => { console.warn('[ws] socket error'); };   // onclose fires next; reconnect handled there
+  ws.onclose   = () => {
+    ws = null;
+    if (userClosed) { setConnState('offline'); return; }
+    setConnState('connecting');   // quiet: no alarm, just retry
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  const delay = reconnectMs + Math.random() * 250;        // small jitter
+  reconnectMs = Math.min(reconnectMs * 2, RECONNECT_MAX); // back off for next time
+  console.info(`[ws] reconnecting in ${Math.round(delay)}ms`);
+  reconnectTimer = setTimeout(wsOpen, delay);
+}
+
+function wsClose() {
+  userClosed = true;
+  clearTimeout(reconnectTimer);
+  if (ws) { try { ws.close(); } catch (_) {} }
+  ws = null;
+  setConnState('offline');
+}
 
 function sendToWs(d) {
-  if (!ws||!wsConn) { return; }
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(d));
 }
 
 function onMsg(m) {
+  resetIdleTimer();
   switch (m.type) {
     case 'response':
+      if (connState !== 'online') setConnState('online');
       if (m.expression) setFace(m.expression);
       if (m.content)    speak(m.content);
       break;
-    case 'expression': setFace(m.expression||'neutral'); break;
-    case 'speak':      speak(m.content||''); break;
+    case 'expression': setFace(m.expression || 'neutral'); break;
+    case 'speak':      speak(m.content || ''); break;
   }
-}
-
-function setConnUI(on) {
-  const dot = document.getElementById('csDot');
-  const lbl = document.getElementById('csLbl');
-  const btn = document.getElementById('btnConn');
-  dot.className = 'cs-dot'+(on?' ok':'');
-  lbl.textContent = on ? 'connected to '+document.getElementById('wsUrl').value : 'not connected — open ⚙ to configure';
-  btn.textContent = on ? 'Disconnect' : 'Connect';
-  btn.className   = on ? 'sp-btn danger' : 'sp-btn active';
-  setHeader(on?'ok':'', on?'ONLINE':'OFFLINE');
-}
-
-/* ─────────────────────────────────────────────────
-   HEADER INDICATOR
-───────────────────────────────────────────────── */
-function setHeader(pip, label) {
-  const p = document.getElementById('hPip');
-  const l = document.getElementById('hLbl');
-  p.className = 'conn-pip'+(pip?' '+pip:'');
-  l.textContent = label;
 }
 
 /* ─────────────────────────────────────────────────
@@ -684,11 +802,12 @@ document.addEventListener('click', e => {
 ───────────────────────────────────────────────── */
 const defaultWsUrl = `ws://${window.location.host}/ws`;
 document.getElementById('wsUrl').value = defaultWsUrl;
-setFace('neutral');
+setFace('sleeping');
+resetIdleTimer();
 
 window.addEventListener('load', () => {
   setTimeout(() => {
-    if (!wsConn) toggleConnect();
+    if (connState === 'offline') toggleConnect();
   }, 100);
 });
 </script>

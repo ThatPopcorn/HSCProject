@@ -1,13 +1,16 @@
 """
-Live-data module for the Tamagotchi bot.
+Live-data command module for the Tamagotchi bot.
 
-Primary path  — prefetch_context(user_text):
-  Detects what live data the user is asking about, fetches it before the
-  model call, and returns a compact string to inject into the prompt.
-  The model sees the real values and answers naturally — no token tricks.
+Commands are registered in _REGISTRY and invoked by the agent loop in main.py.
 
-Fallback path — resolve(text):
-  Replaces any [cmd:NAME] / [cmd:NAME(arg)] tokens the model may emit.
+The model emits [cmd:list] when it needs live data.
+The system returns the command list, the model picks one and emits e.g. [cmd:GETWEATHER(Sydney)].
+The system executes it, returns the result, and the model writes its final reply.
+
+Public API:
+  command_list() -> str          compact list of all commands for the model
+  has_commands(text) -> bool     True if text contains any [cmd:...] token
+  resolve(text) -> str           replace all [cmd:...] tokens with their results
 """
 
 import datetime
@@ -76,7 +79,7 @@ def _fmt_time(dt: datetime.datetime) -> str:
 
 # ── Commands ────────────────────────────────────────────────────────────────
 
-@_reg("GETTIME", "GETTIME or GETTIME(city)")
+@_reg("GETTIME", "GETTIME or GETTIME(city) — local time or time in a named city")
 def _gettime(arg: Optional[str] = None) -> str:
     if not arg:
         return _fmt_time(datetime.datetime.now())
@@ -93,13 +96,13 @@ def _gettime(arg: Optional[str] = None) -> str:
         return "(time unavailable)"
 
 
-@_reg("GETDATE", "GETDATE")
+@_reg("GETDATE", "GETDATE — today's full date")
 def _getdate(arg: Optional[str] = None) -> str:
     today = datetime.date.today()
     return today.strftime(f"%A, %B {today.day} %Y")
 
 
-@_reg("GETWEATHER", "GETWEATHER(city)")
+@_reg("GETWEATHER", "GETWEATHER(city) — current weather conditions for a city")
 def _getweather(arg: Optional[str] = None) -> str:
     if not arg:
         return "(specify a city)"
@@ -112,7 +115,7 @@ def _getweather(arg: Optional[str] = None) -> str:
         return "(weather unavailable)"
 
 
-@_reg("GETDAY", "GETDAY — day of the week")
+@_reg("GETDAY", "GETDAY — current day of the week")
 def _getday(arg: Optional[str] = None) -> str:
     return datetime.date.today().strftime("%A")
 
@@ -120,11 +123,16 @@ def _getday(arg: Optional[str] = None) -> str:
 # ── Public API ──────────────────────────────────────────────────────────────
 
 def command_list() -> str:
-    """Return a compact command reference for the system prompt."""
-    return "; ".join(desc for _, (_, desc) in sorted(_REGISTRY.items()))
+    """Compact command reference to send to the model when it emits [cmd:list]."""
+    return " | ".join(desc for _, (_, desc) in sorted(_REGISTRY.items()))
 
 
-_CMD_RE = re.compile(r'\[cmd:([A-Za-z_]+)(?:\(([^)]*)\))?\]')
+_CMD_RE = re.compile(r'\[cmd:([A-Za-z_]+)(?:\(([^)]*)\))?\]', re.IGNORECASE)
+
+
+def has_commands(text: str) -> bool:
+    """True if text contains any [cmd:...] token (use to detect tool calls)."""
+    return bool(_CMD_RE.search(text))
 
 
 def resolve(text: str) -> str:
@@ -138,47 +146,3 @@ def resolve(text: str) -> str:
         fn, _ = entry
         return fn(arg)
     return _CMD_RE.sub(_sub, text)
-
-
-# ── Pre-fetch detection ─────────────────────────────────────────────────────
-
-_WEATHER_RE = re.compile(
-    r'weather\s+(?:in|for|at|like\s+in)\s+([A-Za-z][A-Za-z ]{1,24}?)(?=[?,.!]|$)'
-    r'|([A-Za-z][A-Za-z ]{1,24}?)\s+weather',
-    re.IGNORECASE,
-)
-
-_CITY_TIME_RE = re.compile(
-    r'(?:time|clock)\s+(?:in|at|for)\s+([A-Za-z][A-Za-z ]{1,24}?)(?=[?,.!]|$)',
-    re.IGNORECASE,
-)
-
-
-def prefetch_context(user_text: str) -> str:
-    """
-    Inspect the user's message, fetch any relevant live data, and return a
-    compact string like "time: 3:45 PM; date: Monday, May 12 2026; weather in
-    Sydney: Overcast, +19°C" to be injected into the model's context.
-
-    Always includes local time + date; adds weather / remote-city time only
-    when the question clearly calls for them.
-    """
-    parts = [
-        f"time: {_gettime()}",
-        f"date: {_getdate()}",
-    ]
-
-    m = _WEATHER_RE.search(user_text)
-    if m:
-        city = (m.group(1) or m.group(2) or "").strip().rstrip("?!., ")
-        if city:
-            parts.append(f"weather in {city}: {_getweather(city)}")
-
-    m = _CITY_TIME_RE.search(user_text)
-    if m:
-        city = m.group(1).strip().rstrip("?!., ")
-        result = _gettime(city)
-        if not result.startswith("("):
-            parts.append(f"time in {city}: {result}")
-
-    return "; ".join(parts)

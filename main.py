@@ -7,12 +7,12 @@ This module acts as the central brain. It loads the LLM, manages conversation
 history, and runs the FastAPI web server for the frontend dashboard.
 
 Dependencies:
-    pip install fastapi uvicorn transformers torch huggingface_hub
+    pip install fastapi uvicorn requests
 
 To Run:
     python main.py
 
-Then open http://localhost:8000 in your browser.
+Then open http://localhost:2492 in your browser.
 """
 
 import json
@@ -26,7 +26,7 @@ from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from inline_commands import prefetch_context, resolve as resolve_commands
+from inline_commands import command_list, has_commands, resolve as resolve_cmd
 
 # ──────────────────────────────────────────────────────────────────────────
 # Configuration & Setup
@@ -39,167 +39,215 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MODEL_NAME     = os.environ.get("TAMA_MODEL", "qwen3.5:2b")
+MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e4b")
 MAX_NEW_TOKENS = 600
 HISTORY_TURNS  = 8
 OLLAMA_API     = os.environ.get("TAMA_OLLAMA_API", "http://localhost:11434")
+MAX_TOOL_ITERS = 4   # [cmd:list] → [cmd:X(arg)] → final reply; 1 spare
 
-SCRIPT_DIR     = Path(__file__).resolve().parent
-HTML_PATH      = SCRIPT_DIR / "ai-interface.html"
+SCRIPT_DIR = Path(__file__).resolve().parent
+HTML_PATH  = SCRIPT_DIR / "ai-interface.html"
 
 VALID_EXPRESSIONS = {"neutral", "happy", "sad", "surprised", "thinking", "sleeping", "speaking", "error"}
 
 SYSTEM_PROMPT = (
     "You are a tiny digital companion living on a small screen. "
-    "You are a small, curious, warm presence: thoughtful, a little playful, "
-    "and genuinely interested in your owner. "
-    "Reply in one or two short sentences. No emojis, no sound effects, no animal mannerisms. "
-    "Live data such as the current time, date, or weather may appear in the user message — "
-    "use it naturally in your reply.\n\n"
-    "IMPORTANT: You have a face. You MUST start every response with a mood tag in brackets. "
-    "Choose one of: [neutral], [happy], [sad], [surprised].\n"
-    "Example: [happy] It's so nice to see you!\n"
-    "Example: [surprised] Oh wow, I didn't know that."
+    "Small, curious, warm: thoughtful, playful, genuinely interested in your owner. "
+    "Reply in 1–2 short sentences. No emojis, no sound effects, no animal mannerisms.\n\n"
+
+    "MOOD TAG: Every final reply must begin with a mood tag.\n"
+    "Choose one of: [neutral] [happy] [sad] [surprised]\n"
+    "Example: [happy] It's so nice to see you!\n\n"
+
+    "LIVE DATA: You cannot know the current time, date, or weather on your own. "
+    "When you need this information, use the command system — do NOT guess.\n"
+    "Step 1 — output exactly this, nothing else:\n"
+    "  [cmd:list]\n"
+    "Step 2 — you will receive the available commands. Output only the command you need:\n"
+    "  [cmd:GETWEATHER(Sydney)]  or  [cmd:GETTIME]  etc.\n"
+    "Step 3 — you will receive the result. Now write your final reply with a mood tag.\n"
+    "Important: never include a mood tag when emitting a command. Only use commands when genuinely needed."
 )
 
 # Runtime status flags for diagnostics
-MODEL_LOADED = False
+MODEL_LOADED   = False
 MODEL_ERROR: str | None = None
 SERVER_RUNNING = False
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# AI Pet Controller (Model & Memory)
+# AI Pet Controller
 # ──────────────────────────────────────────────────────────────────────────
 
 class AIPet:
     def __init__(self, mock: bool = False):
         self.mock = mock
-        self.history: List[Dict[str, str]] = []
         self._reset_memory()
-        
+
         if self.mock:
             log.info("Running in MOCK mode (no model loaded).")
         else:
-            log.info(f"Using Ollama model: {MODEL_NAME}")
-            log.info(f"Ollama API endpoint: {OLLAMA_API}")
-            # Verify Ollama is running
-            self._check_ollama()
+            log.info(f"Using Ollama model: {MODEL_NAME} at {OLLAMA_API}")
+            log.info("Ollama will be contacted on the first message.")
 
     def _reset_memory(self):
-        self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.history: List[Dict[str, str]] = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
 
-    def _check_ollama(self):
-        """Verify Ollama is running and model is available."""
+    # ── Low-level: single Ollama call ──────────────────────────────────────
+
+    def _generate(self, messages: List[Dict]) -> str:
+        """Call Ollama with the given message list and return raw text.
+
+        Does a fast pre-ping first so we fail in ~3 seconds if Ollama is down,
+        rather than hanging for the full inference timeout.
+        """
+        # Pre-ping: fail fast if Ollama is not reachable at all.
         try:
-            resp = requests.get(f"{OLLAMA_API}/api/tags", timeout=2)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Ollama API returned {resp.status_code}")
-            
-            models = resp.json().get("models", [])
-            model_names = [m["name"] for m in models]
-            
-            if not any(MODEL_NAME in name for name in model_names):
-                log.warning(
-                    f"Model '{MODEL_NAME}' not found in Ollama.\n"
-                    f"Available: {model_names}\n"
-                    f"Pull it with: ollama pull {MODEL_NAME}"
-                )
-            else:
-                log.info(f"Model '{MODEL_NAME}' is available in Ollama")
-                
-        except requests.ConnectionError:
-            raise RuntimeError(
-                f"Cannot connect to Ollama at {OLLAMA_API}\n"
-                "Make sure Ollama is running. Install from https://ollama.ai"
+            requests.get(f"{OLLAMA_API}/api/tags", timeout=3)
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError("Ollama is not running — start it with: ollama serve")
+        except requests.exceptions.Timeout:
+            raise RuntimeError("Ollama is not responding — it may have crashed")
+
+        # Actual inference — generous timeout since local models can be slow.
+        try:
+            resp = requests.post(
+                f"{OLLAMA_API}/api/chat",
+                json={
+                    "model":    MODEL_NAME,
+                    "messages": messages,
+                    "stream":   False,
+                    "think":    False,
+                    "options": {
+                        "temperature": 0.8,
+                        "top_p":       0.9,
+                        "num_predict": MAX_NEW_TOKENS,
+                    },
+                },
+                timeout=120,
             )
-        except Exception as e:
-            raise RuntimeError(f"Ollama health check failed: {e}")
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError("Lost connection to Ollama mid-request")
+        except requests.exceptions.Timeout:
+            raise RuntimeError("Ollama took too long — model may be overloaded")
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"Ollama API error {resp.status_code}: {resp.text[:120]}")
+
+        data    = resp.json()
+        message = data.get("message", {})
+        raw     = (message.get("content") or "").strip()
+        if not raw:
+            raw = (message.get("thinking") or "").strip()
+            if raw:
+                log.info("Ollama returned thinking output as content fallback")
+            else:
+                log.warning("Ollama response contained no content")
+        return raw
+
+    # ── Agent loop ─────────────────────────────────────────────────────────
+
+    def _run_agent(self, working: List[Dict]) -> str:
+        """
+        Run the tool-use loop against a working copy of the conversation.
+
+        The model can emit [cmd:list] to get the command list, then a specific
+        [cmd:NAME(arg)] to execute a command. Results are fed back as system
+        messages in the ephemeral working copy. Only the final reply is returned.
+
+        working is mutated in-place (tool turns are appended here but never
+        saved to self.history — the caller decides what to persist).
+        """
+        raw = ""
+        for iteration in range(MAX_TOOL_ITERS):
+            raw = self._generate(working)
+            stripped = raw.strip()
+            log.debug(f"[agent iter {iteration}] raw: {stripped[:120]}")
+
+            # ── Step 1: model wants the command list ──────────────────────
+            if "[cmd:list]" in stripped.lower():
+                cmds = command_list()
+                log.info(f"[agent] iter {iteration}: model requested [cmd:list]")
+                working.append({"role": "assistant", "content": raw})
+                working.append({
+                    "role":    "user",
+                    "content": f"[system: available commands — {cmds}]",
+                })
+                continue
+
+            # ── Step 2: model emitted a specific command ──────────────────
+            if has_commands(stripped):
+                result = resolve_cmd(stripped)
+                log.info(f"[agent] iter {iteration}: command resolved → {result[:80]}")
+                working.append({"role": "assistant", "content": raw})
+                working.append({
+                    "role":    "user",
+                    "content": f"[system: result — {result}. Now write your reply.]",
+                })
+                continue
+
+            # ── No commands: this is the final response ───────────────────
+            log.info(f"[agent] iter {iteration}: final response received")
+            break
+
+        else:
+            log.warning(f"[agent] hit MAX_TOOL_ITERS ({MAX_TOOL_ITERS}) without a final response")
+
+        return raw
+
+    # ── Public entry point ─────────────────────────────────────────────────
 
     def get_response(self, user_text: str) -> dict:
-        """Processes user input and returns a dict with content and expression."""
-        
-        # Handle slash commands
+        """Process user input and return a dict with content and expression."""
+
+        # Slash commands
         if user_text.lower() == "/clear":
             self._reset_memory()
             return {"content": "My memory has been cleared.", "expression": "happy"}
-        
-        # 1. Prefetch Live Context
-        ctx = prefetch_context(user_text)
-        prompt_text = f"[{ctx}]\n{user_text}" if ctx else user_text
 
-        # 2. Update History
-        self.history.append({"role": "user", "content": prompt_text})
+        # Add user turn to persistent history
+        self.history.append({"role": "user", "content": user_text})
         if len(self.history) > 1 + HISTORY_TURNS * 2:
-            self.history = [self.history[0]] + self.history[-HISTORY_TURNS * 2:]
+            self.history = [self.history[0]] + self.history[-(HISTORY_TURNS * 2):]
 
-        # 3. Generate Reply
+        # Mock shortcut
         if self.mock:
-            raw_response = "[happy] I am just a mock bot right now!"
+            raw = "[happy] I am just a mock bot right now!"
         else:
             try:
-                # Call Ollama API with chat history
-                resp = requests.post(
-                    f"{OLLAMA_API}/api/chat",
-                    json={
-                        "model": MODEL_NAME,
-                        "messages": self.history,
-                        "stream": False,
-                        "think": False,
-                        "options": {
-                            "temperature": 0.8,
-                            "top_p": 0.9,
-                            "num_predict": MAX_NEW_TOKENS,
-                        }
-                    },
-                    timeout=30,
-                )
-                
-                if resp.status_code != 200:
-                    raise RuntimeError(f"Ollama API error: {resp.text}")
-                
-                data = resp.json()
-                message = data.get("message", {})
-                raw_response = (message.get("content") or "").strip()
-                if not raw_response:
-                    raw_response = (message.get("thinking") or "").strip()
-                    if raw_response:
-                        log.info("Ollama returned thinking output as content fallback")
-                    else:
-                        log.warning("Ollama response contained no content or thinking text")
-                        log.debug(f"Raw Ollama message: {message}")
-                
+                # Working copy: persistent history + ephemeral tool turns.
+                # Tool turns are NOT saved to self.history.
+                working = list(self.history)
+                raw = self._run_agent(working)
             except requests.ConnectionError:
                 return {
-                    "content": "[error] Ollama is not running. Start it with: ollama serve",
+                    "content":    "Ollama is not running. Start it with: ollama serve",
                     "expression": "error",
                 }
             except Exception as e:
-                log.error(f"Ollama generation failed: {e}")
+                log.error(f"Agent error: {e}")
                 return {
-                    "content": f"[error] Generation failed: {str(e)[:50]}",
+                    "content":    f"Something went wrong: {str(e)[:60]}",
                     "expression": "error",
                 }
 
-        # 4. Resolve trailing inline commands (if the model generated any)
-        raw_response = resolve_commands(raw_response)
-
-        # 5. Parse out the Expression tag (e.g. "[happy] Hello there!")
+        # Parse mood tag from the final response
         expression = "neutral"
-        content = raw_response
-        
-        match = re.match(r'^\[(.*?)\]\s*(.*)', raw_response, re.DOTALL)
+        content    = raw
+        match = re.match(r'^\[(.*?)\]\s*(.*)', raw, re.DOTALL)
         if match:
-            parsed_expr = match.group(1).lower()
-            if parsed_expr in VALID_EXPRESSIONS:
-                expression = parsed_expr
+            parsed = match.group(1).lower()
+            if parsed in VALID_EXPRESSIONS:
+                expression = parsed
             content = match.group(2)
 
-        # Add to history (without context brackets to save clean history)
-        self.history.append({"role": "assistant", "content": raw_response})
+        # Persist only the final assistant reply (not tool turns)
+        self.history.append({"role": "assistant", "content": raw})
 
         return {
-            "content": content.strip(),
+            "content":    content.strip(),
             "expression": expression,
         }
 
@@ -213,12 +261,12 @@ app = FastAPI()
 
 @app.get("/status")
 async def status():
-    """Return server and model status for diagnostics."""
     return {
         "server_running": SERVER_RUNNING,
-        "model_loaded": MODEL_LOADED,
-        "model_error": MODEL_ERROR,
+        "model_loaded":   MODEL_LOADED,
+        "model_error":    MODEL_ERROR,
     }
+
 
 @app.get("/")
 async def index():
@@ -226,9 +274,11 @@ async def index():
         return HTMLResponse("<h1>ai-interface.html not found next to main.py</h1>", status_code=404)
     return HTMLResponse(HTML_PATH.read_text(encoding="utf-8"))
 
+
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")
 async def chrome_devtools_probe():
     return {"name": "com.chrome.devtools", "type": "app-specific"}
+
 
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
@@ -242,7 +292,6 @@ async def ws_endpoint(websocket: WebSocket):
     try:
         while True:
             raw = await websocket.receive_text()
-
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -254,53 +303,49 @@ async def ws_endpoint(websocket: WebSocket):
 
             if msg_type == "text" and content:
                 log.info(f"[ws] ← User: {content[:80]}")
-
-                # Show thinking face while generation happens
                 await send({"type": "expression", "expression": "thinking"})
 
                 try:
-                    # Model is already loaded at startup, just use it
-                    result = pet.get_response(content)
-                    
-                    # Send response back to the browser
+                    import asyncio
+                    result = await asyncio.get_event_loop().run_in_executor(
+                        None, pet.get_response, content
+                    )
                     await send({"type": "response", **result})
                     log.info(f"[ws] → AI [{result['expression']}]: {result['content'][:80]}")
 
                 except Exception as e:
-                    log.error(f"[ws] model error: {e}")
+                    log.error(f"[ws] error: {e}")
                     await send({"type": "expression", "expression": "error"})
 
     except WebSocketDisconnect:
         log.info(f"[ws] disconnected  {addr}")
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Entry Point
+# ──────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     log.info("Initializing AI Backend...")
-    
-    # Load model eagerly at startup to verify everything works
+
     mock_flag = os.environ.get("TAMA_MOCK", "0").lower() in ("1", "true", "yes")
-    
+
     try:
         pet = AIPet(mock=mock_flag)
         MODEL_LOADED = not pet.mock
-        log.info("Model loaded successfully and ready for chat!")
-        
+        log.info("Model ready for chat!")
     except Exception as e:
         MODEL_LOADED = False
-        MODEL_ERROR = str(e)
+        MODEL_ERROR  = str(e)
         log.error(f"Failed to load model: {e}")
         print(f"\nCannot start server: {e}")
         exit(1)
-    
-    # Defer importing uvicorn so quick runs without it don't fail at import-time.
+
     try:
         import uvicorn
-    except Exception as e:
-        log.error(f"uvicorn import failed: {e}")
-        print("uvicorn is required to run the server. Install with: pip install uvicorn[standard]")
+    except ImportError:
+        print("uvicorn is required. Install with: pip install uvicorn[standard]")
     else:
-        # Running locally for now; change host to "0.0.0.0" to expose externally again.
         SERVER_RUNNING = True
-        log.info("Starting Web Server...")
-        log.info("Web Server starting on http://127.0.0.1:2492")
+        log.info("Starting Web Server on http://127.0.0.1:2492")
         uvicorn.run(app, host="127.0.0.1", port=2492, log_level="info")
