@@ -41,7 +41,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e4b")
+MODEL_NAME     = os.environ.get("TAMA_MODEL", "gemma4:e2b")
 MAX_NEW_TOKENS = 600
 HISTORY_TURNS  = 8
 OLLAMA_API     = os.environ.get("TAMA_OLLAMA_API", "http://localhost:11434")
