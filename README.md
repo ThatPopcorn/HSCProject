@@ -1,4 +1,4 @@
-# AI Tamagotchi
+# AI Companion
 
 A locally-hosted AI companion that runs entirely on a Raspberry Pi 5. Chat with a small digital creature that has moods, memory, and awareness of the current time and weather — no cloud, no subscriptions, no data leaving your device.
 
