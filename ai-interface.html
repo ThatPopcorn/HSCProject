@@ -465,8 +465,9 @@ function initRecog(){
   if(!SR) return false;
   recog=new SR();
   recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onstart=()=>{ resetIdleTimer(); micOn=true; setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
+  recog.onstart=()=>{ resetIdleTimer(); setMicUI(true); setFace('thinking'); showSpeech('listening',''); setActivity('act','LISTENING'); };
   recog.onresult=e=>{
+    resetIdleTimer();
     let interim='',final='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
@@ -475,12 +476,30 @@ function initRecog(){
     showSpeech('listening', final||interim);
     if(final.trim()){ clearThoughts(); sendToWs({type:'text',content:final.trim()}); }
   };
-  recog.onerror=e=>{ if(e.error==='no-speech') return; stopMic(); };
-  recog.onend=()=>{ if(micOn) try{ recog.start(); }catch(_){} };
+  // Only truly fatal errors should stop listening. 'aborted', 'no-speech' and
+  // 'network' fire routinely during continuous recognition (especially right
+  // after a restart) — ignore them and let onend restart the session.
+  recog.onerror=e=>{
+    if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){
+      showSpeech('listening','microphone blocked — check browser permissions');
+      stopMic();
+    }
+  };
+  // The engine ends sessions constantly (silence, a final result, timeouts).
+  // While the user still wants to listen, restart — but after a short delay, so
+  // the restart itself doesn't race and throw 'aborted'.
+  recog.onend=()=>{
+    if(!micOn) return;
+    setTimeout(()=>{ if(micOn){ try{ recog.start(); }catch(_){} } }, 150);
+  };
   return true;
 }
 function toggleMic(){ micOn?stopMic():startMic(); }
-function startMic(){ if(!recog && !initRecog()) return; micOn=true; try{ recog.start(); }catch(e){} }
+function startMic(){
+  if(!recog && !initRecog()){ showSpeech('listening','voice input isn\u2019t supported in this browser'); setTimeout(hideSpeech,1800); return; }
+  micOn=true;
+  try{ recog.start(); }catch(_){}   // already-started throws harmlessly; onstart already fired
+}
 function stopMic(){ micOn=false; try{ recog&&recog.stop(); }catch(_){} setMicUI(false); setFace(currentMood); hideSpeech(); clearActivity(); }
 function setMicUI(on){ document.getElementById('micBtn').classList.toggle('on',on); document.getElementById('inputBar').classList.toggle('recording',on); }
 
