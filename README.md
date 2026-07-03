@@ -43,12 +43,28 @@ Environment variables to override defaults:
 
 | Variable | Default | Description |
 |---|---|---|
-| `TAMA_MODEL` | `qwen3.5:2b` | Ollama model to use |
+| `TAMA_MODEL` | `gemma4:e2b` | Ollama model to use |
 | `TAMA_OLLAMA_API` | `http://localhost:11434` | Ollama API endpoint |
 | `TAMA_MOCK` | `0` | Set to `1` to run without a model |
 
+**Linux / macOS (bash/zsh):**
+
 ```bash
 TAMA_MODEL=llama3.2:3b python main.py
+```
+
+**Windows (PowerShell):**
+
+```powershell
+$env:TAMA_MODEL="llama3.2:3b"; python main.py
+```
+
+> The PowerShell form sets the variable for the rest of the session, not just this one command. To use it for a single run, open a fresh terminal or clear it afterward with `Remove-Item Env:\TAMA_MODEL`.
+
+**Windows (cmd):**
+
+```cmd
+set TAMA_MODEL=llama3.2:3b && python main.py
 ```
 
 ---
