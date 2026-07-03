@@ -32,7 +32,6 @@ Then open **http://127.0.0.1:2492** in your browser.
 | `main.py` | Backend server — model, memory, WebSocket, FastAPI |
 | `ai-interface.html` | Frontend — face animations, chat UI, TTS/STT |
 | `inline_commands.py` | Live data injection (time, date, weather) |
-| `webserver.py` | Minimal server template for swapping in your own model |
 | `requirements.txt` | Python dependencies |
 
 ---
